@@ -269,12 +269,22 @@ type GoLog struct {
 	mutex sync.RWMutex
 }
 
+func UninitializedGoVector() *GoLog {
+	return &GoLog{}
+}
+
 // InitGoVector returns a GoLog which generates a logs prefixed with
 // processid, to a file name logfilename.log. Any old log with the same
 // name will be trucated. Config controls logging options. See GoLogConfig for more details.
 func InitGoVector(processid string, logfilename string, config GoLogConfig) *GoLog {
-
 	gv := &GoLog{}
+	gv.InitGoVector(processid, logfilename, config)
+	return gv
+}
+
+func (gv *GoLog) InitGoVector(processid string, logfilename string, config GoLogConfig) {
+
+	// gv := &GoLog{}
 	gv.pid = processid
 
 	if logToTerminal {
@@ -315,16 +325,16 @@ func InitGoVector(processid string, logfilename string, config GoLogConfig) *GoL
 	logname := logfilename + "-Log.txt"
 	gv.logfile = logname
 	if gv.logging {
+		// fmt.Printf("IN GOVEC initializing log file %v\n", gv.logfile)
 		gv.prepareLogFile()
 	}
-
-	return gv
 }
 
 func (gv *GoLog) prepareLogFile() {
 	_, err := os.Stat(gv.logfile)
 	if err == nil {
 		if !gv.appendLog {
+			// fmt.Printf("GOVEC DELETING %v\n", gv.logfile)
 			gv.logger.Println(gv.logfile, "exists! ... Deleting ")
 			os.Remove(gv.logfile)
 		} else {
@@ -356,6 +366,7 @@ func (gv *GoLog) prepareLogFile() {
 	}
 
 	gv.currentVC.Tick(gv.pid)
+	// fmt.Printf("HEY LOOK HERE INITIALIZED FILE\n")
 	ok := gv.logThis("Initialization Complete", gv.pid, gv.currentVC.ReturnVCString(), gv.priority)
 	if ok == false {
 		gv.logger.Println("Something went Wrong, Could not Log!")
@@ -414,6 +425,9 @@ func (gv *GoLog) Flush() bool {
 	if err != nil {
 		complete = false
 	}
+	// info, err := file.Stat()
+	// name, err := filepath.Abs(file.Name())
+	// fmt.Printf("Opened file %v %v\n", name, info)
 	defer file.Close()
 
 	if _, err = file.WriteString(gv.output); err != nil {
@@ -455,6 +469,7 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 	output := buffer.String()
 
 	gv.output += output
+	// fmt.Printf("HEY LOOK GOT HERE IN logThis %v\n", !gv.buffered)
 	if !gv.buffered {
 		complete = gv.Flush()
 	}
@@ -468,11 +483,13 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 // logWriteWrapper is a helper function for wrapping common logging
 // behaviour associated with logThis
 func (gv *GoLog) logWriteWrapper(mesg, errMesg string, priority LogPriority) (success bool) {
+	// fmt.Printf("HEY LOOK logging this: %v\n", mesg)
 	if gv.logging == true {
 		prefix := prefixLookup[priority]
 		wrappedMesg := prefix + " " + mesg
 		success = gv.logThis(wrappedMesg, gv.pid, gv.currentVC.ReturnVCString(), priority)
 		if !success {
+			// fmt.Printf("HEY LOOK logging this cause of error: %v\n", errMesg)
 			gv.logger.Println(errMesg)
 		}
 	}
@@ -516,11 +533,14 @@ func (gv *GoLog) LogLocalEvent(mesg string, opts GoLogOptions) (logSuccess bool)
 // be sent onwards using the Send Command
 func (gv *GoLog) PrepareSend(mesg string, buf interface{}, opts GoLogOptions) (encodedBytes []byte) {
 	//Converting Vector Clock from Bytes and Updating the gv clock
+	// fmt.Printf("HEY LOOK GOT TO START OF PREPARE SEND with: %v\n", mesg)
 	if !gv.broadcast {
 		gv.mutex.Lock()
+		// fmt.Printf("HEY LOOK HERE IN PREPARE SEND clock is %v for %v\n", gv.currentVC.ReturnVCString(), gv.logfile)
 		if opts.Priority >= gv.priority {
 			gv.tickClock()
 
+			// fmt.Printf("In prepare send writing to %v\n", gv.logfile)
 			gv.logWriteWrapper(mesg, "Something went wrong, could not log prepare send", opts.Priority)
 
 			d := VClockPayload{Pid: gv.pid, VcMap: gv.currentVC.GetMap(), Payload: buf}
@@ -578,6 +598,7 @@ func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts
 			gv.logger.Println(err.Error())
 		}
 
+		// fmt.Printf("Merging incoming clocks for %v\n", gv.logfile)
 		// Increment and merge the incoming clock
 		gv.mergeIncomingClock(mesg, e, opts.Priority)
 	}
@@ -586,9 +607,9 @@ func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts
 }
 
 // StartBroadcast allows to use vector clocks in the context of casual broadcasts
-// sent via RPC. Any call to StartBroadcast must have a corresponding call to 
-// StopBroadcast, otherwise a deadlock will occur. All RPC calls made in-between 
-// the calls to StartBroadcast and StopBroadcast will be logged as a single event, 
+// sent via RPC. Any call to StartBroadcast must have a corresponding call to
+// StopBroadcast, otherwise a deadlock will occur. All RPC calls made in-between
+// the calls to StartBroadcast and StopBroadcast will be logged as a single event,
 // will be sent out with the same vector clock and will represent broadcast messages
 // from the current process to the process pool.
 func (gv *GoLog) StartBroadcast(mesg string, opts GoLogOptions) {
