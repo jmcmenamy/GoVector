@@ -14,6 +14,8 @@ import (
 	"github.com/DistributedClocks/GoVector/govec/vclock"
 	ct "github.com/daviddengcn/go-colortext"
 	"github.com/vmihailenco/msgpack/v5"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -267,6 +269,8 @@ type GoLog struct {
 	logger *log.Logger
 
 	mutex sync.RWMutex
+
+	zapLogger *zap.Logger
 }
 
 func UninitializedGoVector() *GoLog {
@@ -283,7 +287,7 @@ func InitGoVector(processid string, logfilename string, config GoLogConfig) *GoL
 }
 
 func (gv *GoLog) InitGoVector(processid string, logfilename string, config GoLogConfig) {
-
+	fmt.Printf("In govector here\n")
 	// gv := &GoLog{}
 	gv.pid = processid
 
@@ -325,9 +329,16 @@ func (gv *GoLog) InitGoVector(processid string, logfilename string, config GoLog
 	logname := logfilename + "-Log.txt"
 	gv.logfile = logname
 	if gv.logging {
-		// fmt.Printf("IN GOVEC initializing log file %v\n", gv.logfile)
+		fmt.Printf("IN GOVEC initializing log file %v\n", gv.logfile)
+		zapLogger, err := newLogger(logfilename+"-zap.txt", gv.buffered)
+		if err != nil {
+			fmt.Printf("Got err creating zap loger: %v\n", err)
+		}
+		gv.zapLogger = zapLogger
 		gv.prepareLogFile()
 	}
+
+	// prepare log file for json logs
 }
 
 func (gv *GoLog) prepareLogFile() {
@@ -371,6 +382,43 @@ func (gv *GoLog) prepareLogFile() {
 	if ok == false {
 		gv.logger.Println("Something went Wrong, Could not Log!")
 	}
+}
+
+func newLogger(filePath string, buffered bool) (*zap.Logger, error) {
+	// Open the log file (zap handles file creation)
+	writer, _, err := zap.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Adjust sync behavior for buffered/unbuffered logging
+	if !buffered {
+		writer = zapcore.Lock(writer) // Ensures writes are immediate
+	}
+
+	// Configure encoder
+	// encoderConfig := zap.NewDevelopmentEncoderConfig()
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:      "timestamp",                 // Include timestamp in JSON
+		LevelKey:     "level",                     // Log level
+		CallerKey:    "caller",                    // Caller location
+		MessageKey:   "message",                   // Log message
+		EncodeTime:   zapcore.ISO8601TimeEncoder,  // Format timestamp
+		EncodeLevel:  zapcore.CapitalLevelEncoder, // INFO, DEBUG, etc.
+		EncodeCaller: zapcore.ShortCallerEncoder,  // File:line
+	}
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderConfig), // Human-readable logs
+		writer,
+		zap.InfoLevel, // Log level
+	)
+
+	// Create the logger
+	logger := zap.New(core)
+
+	fmt.Printf("ZAP: Created new logger\n")
+
+	return logger, nil
 }
 
 // GetCurrentVC returns the current vector clock
@@ -477,7 +525,35 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 	if gv.printonscreen == true {
 		gv.printColoredMessage(Message, Priority)
 	}
+
+	if gv.usetimestamps {
+		gv.logThisZap(Priority, Message,
+			zap.String("timestamp", strconv.FormatInt(time.Now().UnixNano(), 10)),
+			zap.String("processId", gv.pid),
+			zap.String("VCString", gv.currentVC.ReturnVCString()),
+		)
+	} else {
+		gv.logThisZap(Priority, Message,
+			zap.String("processId", gv.pid),
+			zap.String("VCString", gv.currentVC.ReturnVCString()),
+		)
+	}
 	return complete
+}
+
+func (gv *GoLog) logThisZap(Priority LogPriority, msg string, fields ...zap.Field) {
+	switch Priority {
+	case DEBUG:
+		gv.zapLogger.Debug(msg, fields...)
+	case INFO:
+		gv.zapLogger.Info(msg, fields...)
+	case WARNING:
+		gv.zapLogger.Warn(msg, fields...)
+	case ERROR:
+		gv.zapLogger.Error(msg, fields...)
+	default:
+		gv.zapLogger.Info(msg, fields...)
+	}
 }
 
 // logWriteWrapper is a helper function for wrapping common logging
