@@ -530,7 +530,7 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 
 	gv.logThisZap(Priority, Message,
 		zap.String("processId", gv.pid),
-		zap.String("VCString", gv.currentVC.ReturnVCString()),
+		gv.currentVC.ReturnVCStringZap("VCString"),
 	)
 	return complete
 }

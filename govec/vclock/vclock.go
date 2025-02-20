@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"sort"
+
+	"go.uber.org/zap"
 )
 
 // Condition constants define how to compare a vector clock against another,
@@ -134,6 +136,25 @@ func (vc VClock) ReturnVCString() string {
 	}
 	buffer.WriteString("}")
 	return buffer.String()
+}
+
+func (vc VClock) ReturnVCStringZap(fieldName string) zap.Field {
+	//sort
+	ids := make([]string, len(vc))
+	i := 0
+	for id := range vc {
+		ids[i] = id
+		i++
+	}
+
+	sort.Strings(ids)
+
+	fields := make([]zap.Field, len(vc))
+	for i, id := range ids {
+		fields[i] = zap.Uint64(id, vc[id])
+	}
+
+	return zap.Dict(fieldName, fields...)
 }
 
 // Compare takes another clock and determines if it is Equal,
