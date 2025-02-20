@@ -330,7 +330,7 @@ func (gv *GoLog) InitGoVector(processid string, logfilename string, config GoLog
 	gv.logfile = logname
 	if gv.logging {
 		fmt.Printf("IN GOVEC initializing log file %v\n", gv.logfile)
-		zapLogger, err := newLogger(logfilename+"-zap.txt", gv.buffered)
+		zapLogger, err := newLogger(logfilename+"-zap-Log.txt", gv.buffered)
 		if err != nil {
 			fmt.Printf("Got err creating zap loger: %v\n", err)
 		}
@@ -399,13 +399,15 @@ func newLogger(filePath string, buffered bool) (*zap.Logger, error) {
 	// Configure encoder
 	// encoderConfig := zap.NewDevelopmentEncoderConfig()
 	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:      "timestamp",                 // Include timestamp in JSON
-		LevelKey:     "level",                     // Log level
-		CallerKey:    "caller",                    // Caller location
-		MessageKey:   "message",                   // Log message
-		EncodeTime:   zapcore.ISO8601TimeEncoder,  // Format timestamp
-		EncodeLevel:  zapcore.CapitalLevelEncoder, // INFO, DEBUG, etc.
-		EncodeCaller: zapcore.ShortCallerEncoder,  // File:line
+		TimeKey:       "timestamp",                 // Include timestamp in JSON
+		LevelKey:      "level",                     // Log level
+		CallerKey:     "caller",                    // Caller location
+		MessageKey:    "message",                   // Log message
+		StacktraceKey: "stacktrace",                // Strack trace
+		FunctionKey:   "function",                  // Function name
+		EncodeTime:    zapcore.ISO8601TimeEncoder,  // Format timestamp
+		EncodeLevel:   zapcore.CapitalLevelEncoder, // INFO, DEBUG, etc.
+		EncodeCaller:  zapcore.ShortCallerEncoder,  // File:line
 	}
 	core := zapcore.NewCore(
 		zapcore.NewJSONEncoder(encoderConfig), // Human-readable logs
@@ -414,7 +416,7 @@ func newLogger(filePath string, buffered bool) (*zap.Logger, error) {
 	)
 
 	// Create the logger
-	logger := zap.New(core)
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.DebugLevel))
 
 	fmt.Printf("ZAP: Created new logger\n")
 
@@ -526,18 +528,10 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 		gv.printColoredMessage(Message, Priority)
 	}
 
-	if gv.usetimestamps {
-		gv.logThisZap(Priority, Message,
-			zap.String("timestamp", strconv.FormatInt(time.Now().UnixNano(), 10)),
-			zap.String("processId", gv.pid),
-			zap.String("VCString", gv.currentVC.ReturnVCString()),
-		)
-	} else {
-		gv.logThisZap(Priority, Message,
-			zap.String("processId", gv.pid),
-			zap.String("VCString", gv.currentVC.ReturnVCString()),
-		)
-	}
+	gv.logThisZap(Priority, Message,
+		zap.String("processId", gv.pid),
+		zap.String("VCString", gv.currentVC.ReturnVCString()),
+	)
 	return complete
 }
 
