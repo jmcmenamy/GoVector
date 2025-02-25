@@ -3,7 +3,9 @@ package govec
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -330,11 +332,10 @@ func (gv *GoLog) InitGoVector(processid string, logfilename string, config GoLog
 	gv.logfile = logname
 	if gv.logging {
 		fmt.Printf("IN GOVEC initializing log file %v\n", gv.logfile)
-		zapLogger, err := newLogger(logfilename+"-zap-Log.txt", gv.buffered)
+		err := gv.prepareZapLogger(logfilename+"-zap-Log.txt", gv.buffered)
 		if err != nil {
 			fmt.Printf("Got err creating zap loger: %v\n", err)
 		}
-		gv.zapLogger = zapLogger
 		gv.prepareLogFile()
 	}
 
@@ -384,11 +385,118 @@ func (gv *GoLog) prepareLogFile() {
 	}
 }
 
-func newLogger(filePath string, buffered bool) (*zap.Logger, error) {
+// readLastLine seeks to the end of the file and reads backwards to extract the last line.
+func readLastLine(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	// Get file size.
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	filesize := fi.Size()
+	fmt.Printf("Size if %v is %v\n", filePath, filesize)
+	if filesize == 0 {
+		return "", nil // Empty file.
+	}
+
+	// Start from the end.
+	offset := filesize - 1
+
+	// Skip any trailing newline characters.
+	for offset >= 0 {
+		b := make([]byte, 1)
+		bytesRead, err := f.ReadAt(b, offset)
+		if err != nil {
+			fmt.Printf("Got err reading %v byte: %v\n", bytesRead, err)
+			return "", err
+		}
+		if b[0] != '\n' {
+			break
+		}
+		offset--
+	}
+
+	// Now, find the beginning of the last line.
+	start := offset
+	for start >= 0 {
+		b := make([]byte, 1)
+		_, err := f.ReadAt(b, start)
+		if err != nil {
+			fmt.Printf("Got err reading byte after finding nonnewline: %v\n", err)
+
+			return "", err
+		}
+		if b[0] == '\n' {
+			// The last line starts after this newline.
+			start++
+			break
+		}
+		start--
+	}
+	if start < 0 {
+		start = 0 // The whole file is one line.
+	}
+
+	// Read from start to offset.
+	length := offset - start + 1
+	buf := make([]byte, length)
+	_, err = f.ReadAt(buf, start)
+	if err != nil && err != io.EOF {
+		fmt.Printf("Got err reading byte when constructing line: %v\n", err)
+
+		return "", err
+	}
+
+	return string(buf), nil
+}
+
+func (gv *GoLog) prepareZapLogger(filePath string, buffered bool) error {
+	// If the log file already exists, read and process its last line.
+	if _, err := os.Stat(filePath); err == nil {
+		lastLine, err := readLastLine(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to read last line: %w", err)
+		}
+		if lastLine != "" {
+			fmt.Printf("Last line: %s\n", lastLine)
+
+			var jsonObj map[string]interface{}
+			if err := json.Unmarshal([]byte(lastLine), &jsonObj); err != nil {
+				fmt.Printf("Error parsing JSON: %v\n", err)
+			} else {
+				if vc, ok := jsonObj["VCString"]; ok {
+					// fmt.Printf("VCString: %v\n", vc)
+					// fmt.Printf("VCString type: %v\n", reflect.TypeOf(vc))
+					VCMap := make(map[string]uint64)
+					for k, v := range vc.(map[string]interface{}) {
+						VCMap[k] = uint64(v.(float64))
+					}
+					gv.currentVC.Merge(VCMap)
+					fmt.Printf("Merged clock was %v\n", gv.currentVC.ReturnVCString())
+
+					// gv.currentVC.Tick(gv.pid)
+					// fmt.Printf("HEY LOOK HERE INITIALIZED FILE\n")
+					// ok := gv.logThis("Initialized zap log file from existing file", gv.pid, gv.currentVC.ReturnVCString(), gv.priority)
+					// if !ok {
+					// 	gv.logger.Println("Something went Wrong, Could not Log!")
+					// }
+					fmt.Printf("Merged clock is now %v\n", gv.currentVC.ReturnVCString())
+				} else {
+					fmt.Printf("VCString field not found in JSON\n")
+				}
+			}
+		}
+	}
+
 	// Open the log file (zap handles file creation)
 	writer, _, err := zap.Open(filePath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Adjust sync behavior for buffered/unbuffered logging
@@ -416,11 +524,11 @@ func newLogger(filePath string, buffered bool) (*zap.Logger, error) {
 	)
 
 	// Create the logger
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.DebugLevel))
+	gv.zapLogger = zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.DebugLevel))
 
 	fmt.Printf("ZAP: Created new logger\n")
 
-	return logger, nil
+	return nil
 }
 
 // GetCurrentVC returns the current vector clock
