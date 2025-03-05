@@ -9,7 +9,7 @@ import (
 	"github.com/DistributedClocks/GoVector/govec"
 )
 
-//Hardcoded client/sever port values, and total messages sent
+// Hardcoded client/sever port values, and total messages sent
 const (
 	SERVERPORT = "8080"
 	CLIENTPORT = "8081"

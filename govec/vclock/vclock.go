@@ -7,6 +7,7 @@ import (
 	"log"
 	"sort"
 
+	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
 )
 
@@ -238,4 +239,107 @@ func (vc VClock) Compare(other VClock, cond Condition) bool {
 		cond = Equal
 	}
 	return cond&otherIs != 0
+}
+
+// VClockPayload is the data structure that is actually end on the wire
+type VClockPayload struct {
+	Pid     string
+	VcMap   map[string]uint64
+	Payload interface{}
+}
+
+// PrintDataBytes prints the Data Stuct as Bytes
+func (d *VClockPayload) PrintDataBytes() {
+	fmt.Printf("%x \n", d.Pid)
+	fmt.Printf("%X \n", d.VcMap)
+	fmt.Printf("%X \n", d.Payload)
+}
+
+// String returns VClockPayload's pid as a string
+func (d *VClockPayload) String() (s string) {
+	s += "-----DATA START -----\n"
+	s += string(d.Pid[:])
+	s += "-----DATA END -----\n"
+	return
+}
+
+// EncodeMsgpack is a custom encoder function, needed for msgpack interoperability
+func (d *VClockPayload) EncodeMsgpack(enc *msgpack.Encoder) error {
+	var err error
+
+	err = enc.EncodeString(d.Pid)
+	if err != nil {
+		return err
+	}
+
+	err = enc.Encode(d.Payload)
+	if err != nil {
+		return err
+	}
+
+	err = enc.EncodeMapLen(len(d.VcMap))
+	if err != nil {
+		return err
+	}
+
+	for key, value := range d.VcMap {
+
+		err = enc.EncodeString(key)
+		if err != nil {
+			return err
+		}
+
+		err = enc.EncodeUint(value)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
+// DecodeMsgpack is a custom decoder function, needed for msgpack
+// interoperability
+func (d *VClockPayload) DecodeMsgpack(dec *msgpack.Decoder) error {
+	var err error
+
+	pid, err := dec.DecodeString()
+	if err != nil {
+		return err
+	}
+	d.Pid = pid
+
+	err = dec.Decode(&d.Payload)
+	if err != nil {
+		return err
+	}
+
+	mapLen, err := dec.DecodeMapLen()
+	if err != nil {
+		return err
+	}
+	var vcMap map[string]uint64
+	vcMap = make(map[string]uint64)
+
+	for i := 0; i < mapLen; i++ {
+
+		key, err := dec.DecodeString()
+		if err != nil {
+			return err
+		}
+
+		value, err := dec.DecodeUint64()
+		if err != nil {
+			return err
+		}
+		vcMap[key] = value
+	}
+	err = dec.DecodeMulti(&d.Pid, &d.Payload, &d.VcMap)
+	d.VcMap = vcMap
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

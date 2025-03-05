@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -37,7 +36,7 @@ func get_regex(logType string) string {
 }
 
 func write_log(logDirectory string, outputFile string, logType string) {
-	files, err := ioutil.ReadDir(logDirectory)
+	files, err := os.ReadDir(logDirectory)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -57,7 +56,7 @@ func write_log(logDirectory string, outputFile string, logType string) {
 		fname := f.Name()
 		if strings.HasSuffix(fname, "Log.txt") {
 			filepath := path.Join(logDirectory, fname)
-			content, err := ioutil.ReadFile(filepath)
+			content, err := os.ReadFile(filepath)
 			if err != nil {
 				fmt.Println(err)
 				os.Exit(1)
