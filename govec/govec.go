@@ -134,14 +134,6 @@ func (c *GoLogZapCore) Write(entry zapcore.Entry, fields []zapcore.Field) error 
 	if c.gv.pid == "" {
 		fmt.Printf("YOOOOO WHAT???")
 	}
-	fields = append(fields,
-		zap.String("caller", entry.Caller.String()),
-		zap.String("stacktrace", entry.Stack),
-		zap.String("function", entry.Caller.Function),
-	)
-	if c.gv.pid != "" {
-		fields = c.gv.addFieldsToLog(fields)
-	}
 	fmt.Printf("trying to log local in write\n")
 	c.gv.logLocalEventZap(entry.Level, entry.Message, fields)
 	fmt.Printf("logged local in write\n")
@@ -481,22 +473,6 @@ func (gv *GoLog) InitGoVector(processid string, config GoLogConfig, logfilenames
 	fmt.Printf("here 2 in init\n")
 	gv.logLocalEventZapUnlocked(zapcore.InfoLevel, "Going to log the backed up messages", make([]zap.Field, 0))
 	for i, zapLog := range gv.preInitializationLogs {
-		addPid := true
-		addVCString := true
-		for _, field := range zapLog.fields {
-			if field.Key == "processId" {
-				addPid = false
-			}
-			if field.Key == "VCString" {
-				addVCString = false
-			}
-		}
-		if addPid {
-			zapLog.fields = append(zapLog.fields, zap.String("processId", gv.pid))
-		}
-		if addVCString {
-			zapLog.fields = append(zapLog.fields, gv.currentVC.ReturnVCStringZap("VCString"))
-		}
 		fmt.Printf("here 3 %v in init for %v\n", i, gv.pid)
 		gv.logLocalEventZapUnlocked(zapLog.level, zapLog.msg, zapLog.fields)
 		fmt.Printf("here 4 %v in init\n", i)
@@ -916,7 +892,7 @@ func (gv *GoLog) logLocalEventZapUnlocked(level zapcore.Level, msg string, field
 	fmt.Printf("got here?\n")
 	if ce := gv.zapLogger.Check(level, msg); ce != nil {
 		gv.tickClock()
-		ce.Write(fields...)
+		ce.Write(gv.addFieldsToLog(fields)...)
 	}
 	fmt.Printf("done logging!")
 }
