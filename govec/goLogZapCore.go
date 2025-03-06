@@ -16,7 +16,7 @@ func (c *GoLogZapCore) With(fields []zapcore.Field) zapcore.Core {
 	return &GoLogZapCore{
 		Core:   c.Core.With(fields),
 		gv:     c.gv,
-		fields: fields,
+		fields: append(c.fields, fields...),
 	}
 }
 
@@ -27,10 +27,11 @@ func (c *GoLogZapCore) With(fields []zapcore.Field) zapcore.Core {
 // If called, Write should always log the Entry and Fields; it should not
 // replicate the logic of Check.
 func (c *GoLogZapCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
+	zapFields := fields
 	if c.fields != nil {
-		fields = append(fields, c.fields...)
+		zapFields = append(fields, c.fields...)
 	}
-	c.gv.logLocalEventZap(entry.Level, entry.Message, fields)
+	c.gv.logLocalEntryZap(entry, zapFields)
 	// Proceed with writing the log entry as normal.
 	return c.Core.Write(entry, fields)
 }
