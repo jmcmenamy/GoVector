@@ -4,6 +4,7 @@ package govec
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"github.com/DistributedClocks/GoVector/govec/vclock"
 	ct "github.com/daviddengcn/go-colortext"
 	"github.com/vmihailenco/msgpack/v5"
+	"go.uber.org/multierr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -95,6 +97,8 @@ type GoLogConfig struct {
 	GenerateZapLogs bool
 	// Whether or not to generate logs using regex style, compatible with the original Shiviz
 	GenerateRegexLogs bool
+	// Prefix to add to zap log paths for where to write files. Empty is fine
+	ZapLogPrefix string
 }
 
 // GetDefaultConfig returns the default GoLogConfig with default values
@@ -186,7 +190,7 @@ type GoLog struct {
 	// If true logs are buffered in memory and flushed to disk upon
 	// calling flush. Logs can be lost if a program stops prior to
 	// flushing buffered logs.
-	buffered atomic.Bool
+	buffered *atomic.Bool
 
 	// Flag to include timestamps when logging events
 	usetimestamps bool
@@ -217,28 +221,41 @@ type GoLog struct {
 	// Internal logger for printing errors
 	logger *log.Logger
 
-	mutex sync.RWMutex
+	mutex *sync.RWMutex
 
-	zapLogger *zap.Logger
+	zapLogger      *zap.Logger
+	zapSugarLogger *zap.SugaredLogger
+	zapLogPrefix   string
 }
 
 // Given an existing zap Logger, return a new zap logger that will
 // keep the same configuration, but also write any logs to this GoLog logger
+// the level of the core of this logger will be the level of gv
 func (gv *GoLog) WrapBaseZapLogger(baseLogger *zap.Logger) *zap.Logger {
 	return baseLogger.WithOptions(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
 		// could use zapcore.NewTee here but still would need to embed this core
-		return &GoLogZapCore{
-			Core: core,
-			gv:   gv,
-		}
+		return zapcore.NewTee(core, &GoLogWrappedZapCore{
+			core:  core,
+			gv:    gv,
+			level: gv.level,
+		})
 	}), zap.AddCaller(), zap.AddStacktrace(min(baseLogger.Level(), gv.level)))
 }
 
 // prepareGoLogWriteSyncer opens the filePaths in append mode (or creates it if it doesn't exist),
 // and sets the writeSyncer of gv to a GoLogWriteSyncer safe for concurrent use.
 func (gv *GoLog) prepareGoLogWriteSyncer(filePaths []string) error {
+	// Ensure the directory for each file path exists
+	for _, path := range filePaths {
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			// Handle the error appropriately
+			log.Fatalf("failed to create directory %q: %v", dir, err)
+		}
+	}
 	baseWriteSyncer, _, err := zap.Open(filePaths...)
 	if err != nil {
+		gv.logger.Printf("Gott err making write Syncer %v prefix %v\n", filePaths, gv.zapLogPrefix)
 		return err
 	}
 	gv.writeSyncer = zapcore.Lock(&GoLogWriteSyncer{
@@ -253,9 +270,11 @@ func (gv *GoLog) prepareGoLogWriteSyncer(filePaths []string) error {
 // Loggs are buffered and will be logged immediately once this logger is initialized
 // and output paths are given
 func UninitializedGoVector() *GoLog {
-	goLog := &GoLog{logging: true, loggingZap: true}
+	goLog := &GoLog{logging: true, loggingZap: true, level: zapcore.InvalidLevel, mutex: &sync.RWMutex{}, buffered: &atomic.Bool{}}
 	if logToTerminal {
 		goLog.logger = log.New(os.Stdout, "[GoVector]:", log.Lshortfile)
+		goLog.logger.Printf("success?\n")
+
 	} else {
 		goLog.logger = log.New(io.Discard, "[GoVector]:", log.Lshortfile)
 	}
@@ -271,6 +290,15 @@ func InitGoVector(processid string, logfilename string, config GoLogConfig) *GoL
 	return gv
 }
 
+// Used to update the level of this logger
+// Essentially a no op if this logger has already been initialized
+// Useful if a specific level for logging is desired for wrapping a base logger with WrapBaseZapLogger
+func (gv *GoLog) UpdateLevel(level zapcore.Level) {
+	gv.mutex.Lock()
+	defer gv.mutex.Unlock()
+	gv.level = level
+}
+
 // InitGoVector returns a GoLog which generates a logs prefixed with
 // processid, to files with names logfilenames, appended with a -Log.txt or -zap-Log.txt. Any old log with the same
 // name will be truncated for non-zap logs. zap logs will be parsed and used to initialize the vector clock
@@ -280,10 +308,9 @@ func (gv *GoLog) InitGoVector(processid string, config GoLogConfig, logfilenames
 	defer gv.mutex.Unlock()
 	// gv := &GoLog{}
 	gv.pid = processid
-
 	if logToTerminal && gv.logger == nil {
 		gv.logger = log.New(os.Stdout, "[GoVector]:", log.Lshortfile)
-	} else {
+	} else if gv.logger == nil {
 		gv.logger = log.New(io.Discard, "[GoVector]:", log.Lshortfile)
 	}
 
@@ -329,6 +356,7 @@ func (gv *GoLog) InitGoVector(processid string, config GoLogConfig, logfilenames
 		gv.logger.Printf("No file names passed in")
 	}
 	gv.logfile = logfilenames[0] + "-Log.txt"
+	gv.zapLogPrefix = config.ZapLogPrefix
 	if gv.loggingZap {
 		for i, logfilename := range logfilenames {
 			logfilenames[i] = logfilename + "-zap-Log.txt"
@@ -358,6 +386,12 @@ func (gv *GoLog) InitGoVector(processid string, config GoLogConfig, logfilenames
 		gv.prepareLogFile()
 		gv.Flush()
 	}
+	gv.logger.Printf("finished initializing for %v clock is %v\n", gv.pid, gv.currentVC.GetMap()[gv.pid])
+	// gv.currentVC.Tick(gv.pid)
+	// ok := gv.logThis("Initialization Complete", gv.pid, gv.currentVC.ReturnVCString(), gv.priority)
+	// if !ok {
+	// 	gv.logger.Println("Something went Wrong, Could not Log!")
+	// }
 }
 
 // Assumes gv.logfilename has been set
@@ -396,11 +430,6 @@ func (gv *GoLog) prepareLogFile() {
 		gv.logThis(executionstring, "", "", gv.priority)
 	}
 
-	gv.currentVC.Tick(gv.pid)
-	ok := gv.logThis("Initialization Complete", gv.pid, gv.currentVC.ReturnVCString(), gv.priority)
-	if !ok {
-		gv.logger.Println("Something went Wrong, Could not Log!")
-	}
 }
 
 // seeks to the end of the file and reads backwards to extract the last line.
@@ -471,11 +500,12 @@ func readLastLine(filePath string) (string, error) {
 
 // attempts to create a new zap logger, writing to the given filePaths
 // logger is a json logger including the caller, function, and stack trace for logs
+// uses the first filePath in filePaths to try to initialize VCString to last output VCString
 func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 	var firstFilePath string
 	for _, filePath := range filePaths {
 		if _, err := os.Stat(filePath); err == nil {
-			firstFilePath = filePath
+			firstFilePath = gv.zapLogPrefix + filePath
 			break
 		}
 	}
@@ -501,6 +531,14 @@ func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 					gv.logger.Printf("Merged clock was %v\n", gv.currentVC.ReturnVCString())
 					gv.currentVC.Merge(VCMap)
 					gv.logger.Printf("Merged clock is now %v\n", gv.currentVC.ReturnVCString())
+					// gv.preInitializationLogs = append(
+					// 	gv.preInitializationLogs,
+					// 	&ZapLogInput{
+					// 		level:  gv.level,
+					// 		msg:    "Boostrapped logger with existing file",
+					// 		fields: []zap.Field{zap.String("filePath", firstFilePath)},
+					// 	},
+					// )
 				} else {
 					gv.logger.Printf("VCString field not found in JSON\n")
 				}
@@ -509,6 +547,11 @@ func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 	}
 
 	// Open the log file (zap handles file creation)
+	if gv.zapLogPrefix != "" {
+		for i := range filePaths {
+			filePaths[i] = gv.zapLogPrefix + "/" + filePaths[i]
+		}
+	}
 	if err := gv.prepareGoLogWriteSyncer(filePaths); err != nil {
 		return err
 	}
@@ -534,6 +577,7 @@ func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 
 	// Create the logger
 	gv.zapLogger = zap.New(core, zap.AddCaller(), zap.AddStacktrace(gv.level))
+	gv.zapSugarLogger = gv.zapLogger.Sugar()
 
 	return nil
 }
@@ -587,6 +631,7 @@ func (gv *GoLog) DisableBufferedWrites() {
 // This function should be used by the application to also force writes
 // in the case of interrupts and crashes.   Note: Calling Flush when
 // BufferedWrites is disabled is essentially a no-op.
+// Only to be used for regex style logging; no op for zap style logging
 func (gv *GoLog) Flush() bool {
 	complete := true
 	file, err := os.OpenFile(gv.logfile, os.O_APPEND|os.O_WRONLY, 0600)
@@ -653,11 +698,16 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 	}
 
 	if gv.loggingZap {
-		gv.zapLogger.Log(gv.level, Message,
+		gv.zapLogger.Log(priorityToLevel[Priority], Message,
 			zap.String("processId", gv.pid),
 			gv.currentVC.ReturnVCStringZap("VCString"))
 	}
 	return complete
+}
+
+func (gv *GoLog) clone() *GoLog {
+	clone := *gv
+	return &clone
 }
 
 // Log logs a message at the specified level. The message includes any fields
@@ -665,31 +715,31 @@ func (gv *GoLog) logThis(Message string, ProcessID string, VCString string, Prio
 // Any Fields that require  evaluation (such as Objects) are evaluated upon
 // invocation of Log.
 func (gv *GoLog) Log(lvl zapcore.Level, msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(lvl, msg, fields)
+	gv.LogLocalEventZap(lvl, msg, fields...)
 }
 
 // Debug logs a message at DebugLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func (gv *GoLog) Debug(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.DebugLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.DebugLevel, msg, fields...)
 }
 
 // Info logs a message at InfoLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func (gv *GoLog) Info(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.InfoLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.InfoLevel, msg, fields...)
 }
 
 // Warn logs a message at WarnLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func (gv *GoLog) Warn(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.WarnLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.WarnLevel, msg, fields...)
 }
 
 // Error logs a message at ErrorLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func (gv *GoLog) Error(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.ErrorLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.ErrorLevel, msg, fields...)
 }
 
 // DPanic logs a message at DPanicLevel. The message includes any fields
@@ -699,7 +749,7 @@ func (gv *GoLog) Error(msg string, fields ...zap.Field) {
 // "development panic"). This is useful for catching errors that are
 // recoverable, but shouldn't ever happen.
 func (gv *GoLog) DPanic(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.DPanicLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.DPanicLevel, msg, fields...)
 }
 
 // Panic logs a message at PanicLevel. The message includes any fields passed
@@ -707,7 +757,7 @@ func (gv *GoLog) DPanic(msg string, fields ...zap.Field) {
 //
 // The logger then panics, even if logging at PanicLevel is disabled.
 func (gv *GoLog) Panic(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.PanicLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.PanicLevel, msg, fields...)
 }
 
 // Fatal logs a message at FatalLevel. The message includes any fields passed
@@ -716,15 +766,16 @@ func (gv *GoLog) Panic(msg string, fields ...zap.Field) {
 // The logger then calls os.Exit(1), even if logging at FatalLevel is
 // disabled.
 func (gv *GoLog) Fatal(msg string, fields ...zap.Field) {
-	gv.logLocalEventZap(zapcore.FatalLevel, msg, fields)
+	gv.LogLocalEventZap(zapcore.FatalLevel, msg, fields...)
 }
 
 // Sync calls the underlying Core's Sync method, flushing any buffered log
 // entries. Applications should take care to call Sync before exiting.
-func (gv *GoLog) Sync() {
+func (gv *GoLog) Sync() error {
 	if gv.loggingZap {
-		gv.zapLogger.Sync()
+		return gv.zapLogger.Sync()
 	}
+	return nil
 }
 
 // logWriteWrapper is a helper function for wrapping common logging
@@ -744,12 +795,15 @@ func (gv *GoLog) logWriteWrapper(mesg, errMesg string, priority LogPriority) (su
 }
 
 // Increment GoVectors local clock by 1
-func (gv *GoLog) tickClock() {
+func (gv *GoLog) tickClock() error {
 	_, found := gv.currentVC.FindTicks(gv.pid)
 	if !found {
-		gv.logger.Println("Couldn't find this process's id in its own vector clock!")
+		errMsg := "couldn't find this process's id in its own vector clock"
+		gv.logger.Println(errMsg)
+		return errors.New(errMsg)
 	}
 	gv.currentVC.Tick(gv.pid)
+	return nil
 }
 
 // LogLocalEvent implements LogLocalEvent with priority
@@ -784,6 +838,13 @@ func (gv *GoLog) addFieldsToLog(fields []zap.Field) []zap.Field {
 // Returns whether we successfully passed the log to the logger. If false, the log should be stored for later when the log is initialized
 // Assumes we are holding gv.mutex and are are logging and have a defined logger
 func (gv *GoLog) logLocalEventZapUnlocked(level zapcore.Level, msg string, fields []zap.Field) {
+	if !gv.loggingZap {
+		return
+	}
+	if gv.zapLogger == nil {
+		gv.preInitializationLogs = append(gv.preInitializationLogs, &ZapLogInput{level: level, msg: msg, fields: fields})
+		return
+	}
 	if ce := gv.zapLogger.Check(level, msg); ce != nil {
 		gv.tickClock()
 		ce.Write(gv.addFieldsToLog(fields)...)
@@ -791,13 +852,12 @@ func (gv *GoLog) logLocalEventZapUnlocked(level zapcore.Level, msg string, field
 }
 
 // Same as logLocalEventZapUnlocked but the inputs are different, mainly for use in GoLogZapCore.Write()
-func (gv *GoLog) logLocalEntryZapUnlocked(entry *zapcore.Entry, fields []zap.Field) {
-	gv.tickClock()
-	gv.zapLogger.Core().Write(*entry, gv.addFieldsToLog(fields))
+func (gv *GoLog) logLocalEntryZapUnlocked(entry *zapcore.Entry, fields []zap.Field) error {
+	return multierr.Append(gv.tickClock(), gv.zapLogger.Core().Write(*entry, gv.addFieldsToLog(fields)))
 }
 
 // Same as logLocalEntryZapUnlocked but we grab the lock first and check if we are logging at all
-func (gv *GoLog) logLocalEventZap(level zapcore.Level, msg string, fields []zap.Field) {
+func (gv *GoLog) LogLocalEventZap(level zapcore.Level, msg string, fields ...zap.Field) {
 	if !gv.loggingZap {
 		return
 	}
@@ -811,17 +871,17 @@ func (gv *GoLog) logLocalEventZap(level zapcore.Level, msg string, fields []zap.
 }
 
 // Same as logLocalEventZap but the inputs are different, mainly for use in GoLogZapCore.Write()
-func (gv *GoLog) logLocalEntryZap(entry zapcore.Entry, fields []zap.Field) {
+func (gv *GoLog) logLocalEntryZap(entry zapcore.Entry, fields []zap.Field) error {
 	if !gv.loggingZap {
-		return
+		return nil
 	}
 	gv.mutex.Lock()
 	defer gv.mutex.Unlock()
 	if gv.zapLogger == nil {
 		gv.preInitializationEntries = append(gv.preInitializationEntries, &ZapEntryInput{entry: &entry, fields: fields})
-		return
+		return nil
 	}
-	gv.logLocalEntryZapUnlocked(&entry, fields)
+	return gv.logLocalEntryZapUnlocked(&entry, fields)
 }
 
 // PrepareSend is meant to be used immediately before sending.
@@ -871,12 +931,67 @@ func (gv *GoLog) PrepareSend(mesg string, buf interface{}, opts GoLogOptions) (e
 	return
 }
 
+// PrepareSend is meant to be used immediately before sending.
+// LogMessage will be logged along with the time of send
+// buf is encode-able data (structure or basic type)
+// Returned is an encoded byte array with logging information.
+// This function is meant to be called before sending a packet. Usually,
+// it should Update the Vector Clock for its own process, package with
+// the clock using gob support and return the new byte array that should
+// be sent onwards using the Send Command
+func (gv *GoLog) PrepareSendZap(mesg string, buf interface{}, level zapcore.Level, fields ...zap.Field) (encodedBytes []byte) {
+	//Converting Vector Clock from Bytes and Updating the gv clock
+	// gv.logger.Printf("HEY LOOK GOT TO START OF PREPARE SEND with: %v\n", mesg)
+	if !gv.broadcast {
+		gv.mutex.Lock()
+		// gv.logger.Printf("HEY LOOK HERE IN PREPARE SEND clock is %v for %v\n", gv.currentVC.ReturnVCString(), gv.logfile)
+		if level >= gv.level {
+			// gv.tickClock()
+
+			// gv.logger.Printf("In prepare send writing to %v\n", gv.logfile)
+			gv.logLocalEventZapUnlocked(level, mesg, fields)
+
+			d := vclock.VClockPayload{Pid: gv.pid, VcMap: gv.currentVC.GetMap(), Payload: buf}
+
+			// encode the Clock Payload
+			var err error
+			encodedBytes, err = gv.encodingStrategy(&d)
+			if err != nil {
+				gv.logger.Println(err.Error())
+			}
+
+			// return encodedBytes which can be sent off and received on the other end!
+		}
+		gv.mutex.Unlock()
+
+	} else {
+		// Broadcast: do not acquire the lock, tick the clock or log an event as
+		// all been done by StartBroadcast
+		d := vclock.VClockPayload{Pid: gv.pid, VcMap: gv.currentVC.GetMap(), Payload: buf}
+
+		var err error
+		encodedBytes, err = gv.encodingStrategy(&d)
+		if err != nil {
+			gv.logger.Println(err.Error())
+		}
+	}
+	return
+}
+
 func (gv *GoLog) mergeIncomingClock(mesg string, e vclock.VClockPayload, Priority LogPriority) {
 	// First, tick the local clock
 	gv.tickClock()
 	gv.currentVC.Merge(e.VcMap)
 
 	gv.logWriteWrapper(mesg, "Something went Wrong, Could not Log!", Priority)
+}
+
+func (gv *GoLog) mergeIncomingClockZap(mesg string, e vclock.VClockPayload, level zapcore.Level, fields []zap.Field) {
+	// First, tick the local clock
+	// gv.tickClock()
+	gv.currentVC.Merge(e.VcMap)
+
+	gv.logLocalEventZapUnlocked(level, mesg, fields)
 }
 
 // UnpackReceive is used to unmarshall network data into local structures.
@@ -905,6 +1020,33 @@ func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts
 	}
 	gv.mutex.Unlock()
 
+}
+
+// UnpackReceive is used to unmarshall network data into local structures.
+// LogMessage will be logged along with the vector time receive happened
+// buf is the network data, previously packaged by PrepareSend unpack is
+// a pointer to a structure, the same as was packed by PrepareSend.
+// This function is meant to be called immediately after receiving
+// a packet. It unpacks the data by the program, the vector clock. It
+// updates vector clock and logs it. and returns the user data
+func (gv *GoLog) UnpackReceiveZap(mesg string, buf []byte, unpack interface{}, level zapcore.Level, fields ...zap.Field) {
+	gv.mutex.Lock()
+
+	if level >= gv.level {
+		e := vclock.VClockPayload{}
+		e.Payload = unpack
+
+		// Just use msgpack directly
+		err := gv.decodingStrategy(buf, &e)
+		if err != nil {
+			gv.logger.Println(err.Error())
+		}
+
+		// gv.logger.Printf("Merging incoming clocks for %v\n", gv.logfile)
+		// Increment and merge the incoming clock
+		gv.mergeIncomingClockZap(mesg, e, level, fields)
+	}
+	gv.mutex.Unlock()
 }
 
 // StartBroadcast allows to use vector clocks in the context of casual broadcasts
