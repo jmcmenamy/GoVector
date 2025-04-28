@@ -1,38 +1,95 @@
 package govec
 
 import (
-	"bytes"
-	"errors"
+	"sync"
+	"time"
 
 	"go.uber.org/zap/zapcore"
 )
 
-// GoLogWriteSyncer wraps a zapcore.WriteSyncer
-// It is used to support buffering in Zap
+// GoLogWriteSyncer lets you flip between an unbuffered and a buffered write syncer.
 type GoLogWriteSyncer struct {
-	baseWriteSyncer zapcore.WriteSyncer
-	buffer          *bytes.Buffer
-	gv              *GoLog
+	mu           sync.RWMutex
+	unbuf        zapcore.WriteSyncer
+	buf          *zapcore.BufferedWriteSyncer
+	manualBuffer bool
+
+	// always == unbuf or buf, under mu
+	active zapcore.WriteSyncer
 }
 
-// writes p to the internal buffer or directly to the wrapped WriteSyncer if not buffering.
-func (ws *GoLogWriteSyncer) Write(p []byte) (int, error) {
-	if ws.gv.buffered.Load() {
-		return ws.buffer.Write(p)
+func newGoLogWriteSyncer(unbuf zapcore.WriteSyncer) *GoLogWriteSyncer {
+	return &GoLogWriteSyncer{
+		unbuf:  unbuf,
+		buf:    nil,
+		active: unbuf,
 	}
-	return ws.baseWriteSyncer.Write(p)
 }
 
-// flushes the buffered data and syncs the file.
-// throws an error if the baseWriteSyncer hasn't been configured yet
-func (ws *GoLogWriteSyncer) Sync() error {
-	if ws.baseWriteSyncer == nil {
-		// TODO add an actual err here to return
-		ws.gv.Error("Sync called before WriteSyncer initialized")
-		return errors.New("Sync() called on GoLogWriteSyncer without baseWriteSyncer initialized")
+func (s *GoLogWriteSyncer) Write(p []byte) (int, error) {
+	s.mu.RLock()
+	w := s.active
+	s.mu.RUnlock()
+	return w.Write(p)
+}
+
+func (s *GoLogWriteSyncer) Sync() error {
+	s.mu.RLock()
+	w := s.active
+	s.mu.RUnlock()
+	return w.Sync()
+}
+
+// EnableBuffering switches over to the buffered writer
+// size is the maximum amount of data the writer will buffered before flushing.
+// interval is how often the writer should flush data if there have been no writes. 0 if only manual Syncing
+func (s *GoLogWriteSyncer) EnableBuffering(size int, interval time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// no op if already buffering
+	if s.active == s.buf {
+		return nil
 	}
-	if _, err := ws.buffer.WriteTo(ws.baseWriteSyncer); err != nil {
+	s.buf = &zapcore.BufferedWriteSyncer{
+		WS:            s.unbuf,
+		Size:          size,
+		FlushInterval: interval,
+	}
+	s.manualBuffer = interval == 0
+	if s.manualBuffer {
+		// Write a no-op to make sure this BufferedWriteSyncer has been initialized and flush loop started, so it will correctly stop it
+		_, err := s.buf.Write([]byte{})
+		if err != nil {
+			return err
+		}
+		err = s.buf.Stop()
+		if err != nil {
+			return err
+		}
+	}
+	s.active = s.buf
+	return nil
+}
+
+// DisableBuffering switches back to the unbuffered writer
+// Syncs any data in the existing buf
+func (s *GoLogWriteSyncer) DisableBuffering() (err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// no op if already not buffering
+	if s.active == s.unbuf {
+		return nil
+	}
+	// flush any buffered data before disabling
+	err = s.buf.Stop()
+	if err != nil {
 		return err
 	}
-	return ws.baseWriteSyncer.Sync()
+	s.active = s.unbuf
+	// if manual, stop is a no op since we previously stopped, so sync manually
+	if s.manualBuffer {
+		err = s.buf.Sync()
+	}
+	s.buf = nil
+	return err
 }

@@ -4,25 +4,27 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// GoLogWrappedZapCore wraps an existing zapcore.Core and intercepts writes, to duplicate writes
+// GoLogCore wraps an existing zapcore.Core and intercepts writes, to duplicate writes
 // to a GoLog logger. The interval GoLog zap logger does not use this struct
 // Assumes this is used with NewTee, in order to make a multicore with this core and the baseCore
 // This avoids needing to explicitly pass writes through to the base core
-type GoLogWrappedZapCore struct {
-	level  zapcore.Level
-	core   zapcore.Core
-	gv     *GoLog
-	fields []zapcore.Field
+type GoLogCore struct {
+	zapcore.Core
+	gv *GoLog
 }
+
+type nopCore struct{ zapcore.Core }
+
+// NewNopCore returns a no-op Core. Copy of zap's but enable returns true instead of false
+func NewNopCore() zapcore.Core             { return nopCore{Core: zapcore.NewNopCore()} }
+func (nopCore) Enabled(zapcore.Level) bool { return true }
 
 // With adds structured context to the Core.
 // Return copy of this core where fields will be added to every log to the GoLog and the base logger
-func (c *GoLogWrappedZapCore) With(fields []zapcore.Field) zapcore.Core {
-	return &GoLogWrappedZapCore{
-		level:  c.level,
-		core:   c.core,
-		gv:     c.gv,
-		fields: append(c.fields, fields...),
+func (c *GoLogCore) With(fields []zapcore.Field) zapcore.Core {
+	return &GoLogCore{
+		Core: c.Core.With(fields),
+		gv:   c.gv,
 	}
 }
 
@@ -32,12 +34,14 @@ func (c *GoLogWrappedZapCore) With(fields []zapcore.Field) zapcore.Core {
 //
 // If called, Write should always log the Entry and Fields; it should not
 // replicate the logic of Check.
-func (c *GoLogWrappedZapCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
-	zapFields := fields
-	if c.fields != nil {
-		zapFields = append(fields, c.fields...)
+func (c *GoLogCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
+	c.gv.mutex.Lock()
+	defer c.gv.mutex.Unlock()
+	fields, initialized := c.gv.addMetadataFields(entry, fields)
+	if !initialized {
+		return nil
 	}
-	return c.gv.logLocalEntryZap(entry, zapFields)
+	return c.Core.Write(entry, fields)
 }
 
 // Have to overwrite method and copy implementation so our GoLogZapCore receiver is used instead of zapcore.ioCore
@@ -48,23 +52,9 @@ func (c *GoLogWrappedZapCore) Write(entry zapcore.Entry, fields []zapcore.Field)
 // the result.
 //
 // Callers must use Check before calling Write.
-func (c *GoLogWrappedZapCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+func (c *GoLogCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
 	if c.Enabled(ent.Level) {
 		return ce.AddCore(ent, c)
 	}
 	return ce
-}
-
-// Enabled returns true if the given level is at or above this level.
-// If our level is zapcore.InvalidLevel, default to the level of the wrapped core
-func (c *GoLogWrappedZapCore) Enabled(level zapcore.Level) bool {
-	if c.level != zapcore.InvalidLevel {
-		return c.level.Enabled(level)
-	}
-	return c.core.Enabled(level)
-}
-
-// Sync flushes buffered logs (if any).
-func (c *GoLogWrappedZapCore) Sync() error {
-	return c.gv.Sync()
 }
