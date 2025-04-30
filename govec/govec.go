@@ -98,6 +98,8 @@ func GetDefaultConfig() GoLogConfig {
 		InitialVC:         nil,
 		GenerateZapLogs:   false,
 		GenerateRegexLogs: true,
+		AddCaller:         true,
+		AddStacktrace:     true,
 	}
 	return config
 }
@@ -217,9 +219,20 @@ type GoLog struct {
 	mutex *sync.RWMutex
 
 	*zap.Logger
-	initialized   *atomic.Bool
-	SugaredLogger *zap.SugaredLogger
-	zapLogPrefix  string
+	initialized        *atomic.Bool
+	SugaredLogger      *zap.SugaredLogger
+	wrappedLogger      *zap.Logger
+	wrappedLoggerTwice *zap.Logger
+	// wrappedLoggerThrice *zap.Logger
+	zapLogPrefix string
+}
+
+func (gv *GoLog) updateLoggers(baseLogger *zap.Logger) {
+	gv.Logger = baseLogger
+	gv.SugaredLogger = gv.Logger.Sugar()
+	gv.wrappedLogger = gv.Logger.WithOptions(zap.AddCallerSkip(1))
+	gv.wrappedLoggerTwice = gv.Logger.WithOptions(zap.AddCallerSkip(2))
+	// gv.wrappedLoggerThrice = gv.Logger.WithOptions(zap.AddCallerSkip(3))
 }
 
 // Given an existing zap Logger, return a new zap logger that will
@@ -267,7 +280,7 @@ func (gv *GoLog) prepareGoLogWriteSyncer(filePaths []string) error {
 // Loggs are buffered and will be logged immediately once this logger is initialized
 // and output paths are given
 func UninitializedGoVector() *GoLog {
-	goLog := &GoLog{logging: true, loggingZap: true, level: zapcore.InvalidLevel, mutex: &sync.RWMutex{}, buffered: &atomic.Bool{}, initialized: &atomic.Bool{}}
+	goLog := &GoLog{logging: true, loggingZap: true, level: zapcore.InfoLevel, mutex: &sync.RWMutex{}, buffered: &atomic.Bool{}, initialized: &atomic.Bool{}}
 	if logToTerminal {
 		goLog.internalLogger = log.New(os.Stdout, "[GoVector]:", log.Lshortfile)
 		goLog.internalLogger.Printf("success?\n")
@@ -277,7 +290,7 @@ func UninitializedGoVector() *GoLog {
 	}
 	goLogCore := &GoLogCore{Core: NewNopCore(), gv: goLog}
 	goLog.initialized.Store(false)
-	goLog.Logger = zap.New(goLogCore)
+	goLog.updateLoggers(zap.New(goLogCore, zap.AddCaller(), zap.AddStacktrace(goLog.level)))
 	goLog.goLogCore = goLogCore
 	return goLog
 }
@@ -597,8 +610,7 @@ func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 	if gv.addStacktrace {
 		opts = append(opts, zap.AddStacktrace(gv.level))
 	}
-	gv.Logger = gv.Logger.WithOptions(opts...)
-	gv.SugaredLogger = gv.Sugar()
+	gv.updateLoggers(gv.Logger.WithOptions(opts...))
 	return nil
 }
 
@@ -806,6 +818,66 @@ func (gv *GoLog) addMetadataFields(entry zapcore.Entry, fields []zapcore.Field) 
 	return fields, initialized
 }
 
+// Redefine Zap methods that return *zap.Logger, so we return GoLog instead
+
+func (gv *GoLog) clone() *GoLog {
+	clone := *gv
+	return &clone
+}
+
+// Named adds a new path segment to the logger's name. Segments are joined by
+// periods. By default, Loggers are unnamed.
+func (gv *GoLog) Named(s string) *GoLog {
+	if s == "" {
+		return gv
+	}
+	l := gv.clone()
+	l.updateLoggers(l.Logger.Named(s))
+	return l
+}
+
+// WithOptions clones the current Logger, applies the supplied Options, and
+// returns the resulting Logger. It's safe to use concurrently.
+func (gv *GoLog) WithOptions(opts ...zap.Option) *GoLog {
+	c := gv.clone()
+	c.updateLoggers(c.Logger.WithOptions(opts...))
+	return c
+}
+
+// With creates a child logger and adds structured context to it. Fields added
+// to the child don't affect the parent, and vice versa. Any fields that
+// require evaluation (such as Objects) are evaluated upon invocation of With.
+func (gv *GoLog) With(fields ...zap.Field) *GoLog {
+	if len(fields) == 0 {
+		return gv
+	}
+	l := gv.clone()
+	l.updateLoggers(l.Logger.With(fields...))
+	return l
+}
+
+// WithLazy creates a child logger and adds structured context to it lazily.
+//
+// The fields are evaluated only if the logger is further chained with [With]
+// or is written to with any of the log level methods.
+// Until that occurs, the logger may retain references to objects inside the fields,
+// and logging will reflect the state of an object at the time of logging,
+// not the time of WithLazy().
+//
+// WithLazy provides a worthwhile performance optimization for contextual loggers
+// when the likelihood of using the child logger is low,
+// such as error paths and rarely taken branches.
+//
+// Similar to [With], fields added to the child don't affect the parent, and vice versa.
+func (gv *GoLog) WithLazy(fields ...zap.Field) *GoLog {
+	if len(fields) == 0 {
+		return gv
+	}
+	return gv.WithOptions(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+		return zapcore.NewLazyWith(core, fields)
+	}))
+}
+
 // Assumes we are holding gv.mutex
 // Ticks the clock and logs the given msg and fields and level level
 // If the zap logger isn't initialized yet, just store it for logging later
@@ -816,7 +888,7 @@ func (gv *GoLog) LogLocalEventZap(level zapcore.Level, msg string, fields ...zap
 		gv.preInitializationLogs = append(gv.preInitializationLogs, &ZapLogInput{level: level, msg: msg, fields: fields})
 		return
 	}
-	gv.Log(level, msg, fields...)
+	gv.wrappedLogger.Log(level, msg, fields...)
 }
 
 // PrepareSend is meant to be used immediately before sending.
@@ -884,7 +956,12 @@ func (gv *GoLog) PrepareSendZapWrapPayload(mesg string, buf interface{}, level z
 		// gv.tickClock()
 
 		// gv.logger.Printf("In prepare send writing to %v\n", gv.logfile)
-		gv.LogLocalEventZap(level, mesg, fields...)
+		if buf == 0 {
+			gv.wrappedLoggerTwice.Log(level, mesg, fields...)
+		} else {
+			gv.wrappedLogger.Log(level, mesg, fields...)
+		}
+		// gv.LogLocalEventZap(level, mesg, fields...)
 
 		gv.mutex.Lock()
 
@@ -927,16 +1004,6 @@ func (gv *GoLog) mergeIncomingClock(mesg string, e vclock.VClockPayload, Priorit
 	gv.logWriteWrapper(mesg, "Something went Wrong, Could not Log!", Priority)
 }
 
-func (gv *GoLog) mergeIncomingClockZap(mesg string, e vclock.VClockPayload, level zapcore.Level, fields []zap.Field) {
-	// First, tick the local clock
-	// gv.tickClock()
-	gv.mutex.Lock()
-	gv.currentVC.Merge(e.VcMap)
-	gv.mutex.Unlock()
-
-	gv.LogLocalEventZap(level, mesg, fields...)
-}
-
 // UnpackReceive is used to unmarshall network data into local structures.
 // LogMessage will be logged along with the vector time receive happened
 // buf is the network data, previously packaged by PrepareSend unpack is
@@ -973,6 +1040,10 @@ func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts
 // a packet. It unpacks the data by the program, the vector clock. It
 // updates vector clock and logs it. and returns the user data
 func (gv *GoLog) UnpackReceiveZapWrapPayload(mesg string, buf []byte, unpack interface{}, level zapcore.Level, fields ...zap.Field) {
+	gv.unpackReceiveZapWrapPayload(mesg, buf, unpack, level, 1, fields)
+}
+
+func (gv *GoLog) unpackReceiveZapWrapPayload(mesg string, buf []byte, unpack interface{}, level zapcore.Level, wrapNum int, fields []zap.Field) {
 	// gv.mutex.Lock()
 
 	// if level >= gv.level {
@@ -987,14 +1058,24 @@ func (gv *GoLog) UnpackReceiveZapWrapPayload(mesg string, buf []byte, unpack int
 
 	// gv.logger.Printf("Merging incoming clocks for %v\n", gv.logfile)
 	// Increment and merge the incoming clock
-	gv.mergeIncomingClockZap(mesg, e, level, fields)
+	// gv.mergeIncomingClockZap(mesg, e, level, fields)
+	gv.mutex.Lock()
+	gv.currentVC.Merge(e.VcMap)
+	gv.mutex.Unlock()
+
+	if wrapNum == 1 {
+		gv.wrappedLogger.Log(level, mesg, fields...)
+	} else {
+		gv.wrappedLoggerTwice.Log(level, mesg, fields...)
+	}
+
 	// }
 	// gv.mutex.Unlock()
 }
 
 func (gv *GoLog) UnpackReceiveZap(mesg string, buf []byte, level zapcore.Level, fields ...zap.Field) {
 	val := 0
-	gv.UnpackReceiveZapWrapPayload(mesg, buf, &val, level, fields...)
+	gv.unpackReceiveZapWrapPayload(mesg, buf, &val, level, 2, fields)
 }
 
 // StartBroadcast allows to use vector clocks in the context of casual broadcasts
