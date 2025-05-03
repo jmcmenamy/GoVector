@@ -37,8 +37,8 @@ func (c *GoLogCore) With(fields []zapcore.Field) zapcore.Core {
 func (c *GoLogCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	c.gv.mutex.Lock()
 	defer c.gv.mutex.Unlock()
-	fields, initialized := c.gv.addMetadataFields(entry, fields)
-	if !initialized {
+	fields = c.gv.addMetadataFields(entry, fields)
+	if !c.gv.initialized {
 		return nil
 	}
 	return c.Core.Write(entry, fields)

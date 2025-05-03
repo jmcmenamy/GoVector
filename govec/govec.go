@@ -219,7 +219,7 @@ type GoLog struct {
 	mutex *sync.RWMutex
 
 	*zap.Logger
-	initialized        *atomic.Bool
+	initialized        bool
 	SugaredLogger      *zap.SugaredLogger
 	wrappedLogger      *zap.Logger
 	wrappedLoggerTwice *zap.Logger
@@ -280,7 +280,7 @@ func (gv *GoLog) prepareGoLogWriteSyncer(filePaths []string) error {
 // Loggs are buffered and will be logged immediately once this logger is initialized
 // and output paths are given
 func UninitializedGoVector() *GoLog {
-	goLog := &GoLog{logging: true, loggingZap: true, level: zapcore.InfoLevel, mutex: &sync.RWMutex{}, buffered: &atomic.Bool{}, initialized: &atomic.Bool{}}
+	goLog := &GoLog{logging: true, loggingZap: true, level: zapcore.InfoLevel, mutex: &sync.RWMutex{}, buffered: &atomic.Bool{}}
 	if logToTerminal {
 		goLog.internalLogger = log.New(os.Stdout, "[GoVector]:", log.Lshortfile)
 		goLog.internalLogger.Printf("success?\n")
@@ -289,7 +289,6 @@ func UninitializedGoVector() *GoLog {
 		goLog.internalLogger = log.New(io.Discard, "[GoVector]:", log.Lshortfile)
 	}
 	goLogCore := &GoLogCore{Core: NewNopCore(), gv: goLog}
-	goLog.initialized.Store(false)
 	goLog.updateLoggers(zap.New(goLogCore, zap.AddCaller(), zap.AddStacktrace(goLog.level)))
 	goLog.goLogCore = goLogCore
 	return goLog
@@ -381,7 +380,7 @@ func (gv *GoLog) InitGoVector(processid string, config GoLogConfig, logfilenames
 		gv.addStacktrace = config.AddStacktrace
 		gv.internalLogger.Printf("Preparing zap logger\n")
 		err := gv.prepareZapLogger(logfilenames)
-		gv.initialized.Store(true)
+		gv.initialized = true
 		if err != nil {
 			gv.internalLogger.Printf("Got err creating zap logger: %v\n", err)
 		}
@@ -583,15 +582,19 @@ func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 	// Configure encoder
 	// encoderConfig := zap.NewDevelopmentEncoderConfig()
 	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:       "timestamp",                 // Include timestamp in JSON
+		// TimeKey:       "timestamp",                 // Include timestamp in JSON
 		LevelKey:      "level",                     // Log level
 		CallerKey:     "caller",                    // Caller location
 		MessageKey:    "message",                   // Log message
 		StacktraceKey: "stacktrace",                // Strack trace
 		FunctionKey:   "function",                  // Function name
+		NameKey:       "name",                      // Logger name
 		EncodeTime:    zapcore.ISO8601TimeEncoder,  // Format timestamp
 		EncodeLevel:   zapcore.CapitalLevelEncoder, // INFO, DEBUG, etc.
 		EncodeCaller:  zapcore.ShortCallerEncoder,  // File:line
+	}
+	if gv.usetimestamps {
+		encoderConfig.TimeKey = "timestamp"
 	}
 	core := zapcore.NewCore(
 		zapcore.NewJSONEncoder(encoderConfig), // Human-readable logs
@@ -793,29 +796,19 @@ func (gv *GoLog) LogLocalEvent(mesg string, opts GoLogOptions) (logSuccess bool)
 
 // Adds processId and VCString fields to a list of zap fields, tickClock
 // If logger isn't initialized, saves entry for later logging
-func (gv *GoLog) addMetadataFields(entry zapcore.Entry, fields []zapcore.Field) ([]zap.Field, bool) {
-	initialized := gv.initialized.Load()
-	if !initialized {
+func (gv *GoLog) addMetadataFields(entry zapcore.Entry, fields []zapcore.Field) []zap.Field {
+	if !gv.initialized {
 		gv.preInitializationEntries = append(gv.preInitializationEntries, &ZapEntryInput{entry: entry, fields: fields})
-		return fields, initialized
+		return fields
 	}
 	err := gv.tickClock()
 	if err != nil {
 		gv.internalLogger.Printf("Error when adding metadata: %v", err)
 	}
-	if gv.usetimestamps {
-		fields = append(fields,
-			zap.String("processId", gv.pid),
-			gv.currentVC.ReturnVCStringZap("VCString"),
-			zap.String("timestamp", strconv.FormatInt(time.Now().UnixNano(), 10)),
-		)
-	} else {
-		fields = append(fields,
-			zap.String("processId", gv.pid),
-			gv.currentVC.ReturnVCStringZap("VCString"),
-		)
-	}
-	return fields, initialized
+	return append(fields,
+		zap.String("processId", gv.pid),
+		gv.currentVC.ReturnVCStringZap("VCString"),
+	)
 }
 
 // Redefine Zap methods that return *zap.Logger, so we return GoLog instead
@@ -884,10 +877,10 @@ func (gv *GoLog) WithLazy(fields ...zap.Field) *GoLog {
 // Returns whether we successfully passed the log to the logger. If false, the log should be stored for later when the log is initialized
 // Assumes we are holding gv.mutex and are are logging and have a defined logger
 func (gv *GoLog) LogLocalEventZap(level zapcore.Level, msg string, fields ...zap.Field) {
-	if !gv.initialized.Load() {
-		gv.preInitializationLogs = append(gv.preInitializationLogs, &ZapLogInput{level: level, msg: msg, fields: fields})
-		return
-	}
+	// if !gv.initialized.Load() {
+	// 	gv.preInitializationLogs = append(gv.preInitializationLogs, &ZapLogInput{level: level, msg: msg, fields: fields})
+	// 	return
+	// }
 	gv.wrappedLogger.Log(level, msg, fields...)
 }
 
@@ -993,6 +986,9 @@ func (gv *GoLog) PrepareSendZapWrapPayload(mesg string, buf interface{}, level z
 }
 
 func (gv *GoLog) PrepareSendZap(mesg string, level zapcore.Level, fields ...zap.Field) (encodedBytes []byte) {
+	if gv == nil {
+		return
+	}
 	return gv.PrepareSendZapWrapPayload(mesg, 0, level, fields...)
 }
 
@@ -1074,6 +1070,9 @@ func (gv *GoLog) unpackReceiveZapWrapPayload(mesg string, buf []byte, unpack int
 }
 
 func (gv *GoLog) UnpackReceiveZap(mesg string, buf []byte, level zapcore.Level, fields ...zap.Field) {
+	if gv == nil || buf == nil {
+		return
+	}
 	val := 0
 	gv.unpackReceiveZapWrapPayload(mesg, buf, &val, level, 2, fields)
 }
