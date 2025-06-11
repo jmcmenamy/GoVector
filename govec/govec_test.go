@@ -1,9 +1,10 @@
 package govec
 
 import (
+	"runtime/debug"
 	"testing"
 
-	"github.com/DistributedClocks/GoVector/govec/vclock"
+	"github.com/jmcmenamy/GoVector/govec/vclock"
 	//"fmt"
 )
 
@@ -11,7 +12,7 @@ var TestPID = "TestPID"
 
 func TestBasicInit(t *testing.T) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 
 	if gv.pid != TestPID {
 		t.Fatalf("Setting Process ID Failed.")
@@ -21,7 +22,7 @@ func TestBasicInit(t *testing.T) {
 	n, found := vc.FindTicks(TestPID)
 
 	AssertTrue(t, found, "Initializing clock: Init PID not found")
-	AssertEquals(t, uint64(1), n, "Initializing clock: wrong initial clock value")
+	AssertEquals(t, uint64(0), n, "Initializing clock: wrong initial clock value")
 
 }
 
@@ -30,7 +31,7 @@ func TestInitialVC(t *testing.T) {
 		TestPID: 7,
 	})
 
-	config := GetDefaultConfig()
+	config := GetDefaultRegexConfig()
 	config.InitialVC = initialVC.Copy()
 	gv := InitGoVector(TestPID, "TestLogFile", config)
 
@@ -38,32 +39,32 @@ func TestInitialVC(t *testing.T) {
 	n, found := vc.FindTicks(TestPID)
 
 	AssertTrue(t, found, "Initializing clock: Init PID not found")
-	AssertEquals(t, initialVC[TestPID]+1, n, "Initializing clock: wrong initial clock value")
+	AssertEquals(t, initialVC[TestPID], n, "Initializing clock: wrong initial clock value")
 }
 
 func TestLogLocal(t *testing.T) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
 	gv.LogLocalEvent("TestMessage1", opts)
 
 	vc := gv.GetCurrentVC()
 	n, _ := vc.FindTicks(TestPID)
 
-	AssertEquals(t, uint64(2), n, "LogLocalEvent: Clock value not incremented")
+	AssertEquals(t, uint64(1), n, "LogLocalEvent: Clock value not incremented")
 
 }
 
 func TestSendAndUnpackInt(t *testing.T) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
 	packed := gv.PrepareSend("TestMessage1", 1337, opts)
 
 	vc := gv.GetCurrentVC()
 	n, _ := vc.FindTicks(TestPID)
 
-	AssertEquals(t, uint64(2), n, "PrepareSend: Clock value incremented")
+	AssertEquals(t, uint64(1), n, "PrepareSend: Clock value incremented")
 
 	var response int
 	gv.UnpackReceive("TestMessage2", packed, &response, opts)
@@ -72,20 +73,20 @@ func TestSendAndUnpackInt(t *testing.T) {
 	n, _ = vc.FindTicks(TestPID)
 
 	AssertEquals(t, 1337, response, "PrepareSend: Clock value incremented.")
-	AssertEquals(t, uint64(3), n, "PrepareSend: Clock value incremented.")
+	AssertEquals(t, uint64(2), n, "PrepareSend: Clock value incremented.")
 
 }
 
 func TestSendAndUnpackStrings(t *testing.T) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
 	packed := gv.PrepareSend("TestMessage1", "DistClocks!", opts)
 
 	vc := gv.GetCurrentVC()
 	n, _ := vc.FindTicks(TestPID)
 
-	AssertEquals(t, uint64(2), n, "PrepareSend: Clock value incremented. ")
+	AssertEquals(t, uint64(1), n, "PrepareSend: Clock value incremented. ")
 
 	var response string
 	gv.UnpackReceive("TestMessage2", packed, &response, opts)
@@ -94,13 +95,13 @@ func TestSendAndUnpackStrings(t *testing.T) {
 	n, _ = vc.FindTicks(TestPID)
 
 	AssertEquals(t, "DistClocks!", response, "PrepareSend: Clock value incremented.")
-	AssertEquals(t, uint64(3), n, "PrepareSend: Clock value incremented.")
+	AssertEquals(t, uint64(2), n, "PrepareSend: Clock value incremented.")
 
 }
 
 func TestBroadcast(t *testing.T) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
 
 	gv.StartBroadcast("TestBroadcast", opts)
@@ -115,7 +116,7 @@ func TestBroadcast(t *testing.T) {
 	vc := gv.GetCurrentVC()
 	n, _ := vc.FindTicks(TestPID)
 
-	AssertEquals(t, uint64(2), n, "PrepareSend: Clock value incremented")
+	AssertEquals(t, uint64(1), n, "PrepareSend: Clock value incremented")
 
 	var response int
 	gv.UnpackReceive("TestMessage", packed, &response, opts)
@@ -124,12 +125,12 @@ func TestBroadcast(t *testing.T) {
 	n, _ = vc.FindTicks(TestPID)
 
 	AssertEquals(t, 1337, response, "PrepareSend: Clock value incremented.")
-	AssertEquals(t, uint64(3), n, "PrepareSend: Clock value incremented.")
+	AssertEquals(t, uint64(2), n, "PrepareSend: Clock value incremented.")
 }
 
 func BenchmarkPrepare(b *testing.B) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
 
 	var packed []byte
@@ -145,7 +146,7 @@ func BenchmarkPrepare(b *testing.B) {
 
 func BenchmarkUnpack(b *testing.B) {
 
-	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultConfig())
+	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
 
 	var packed []byte
@@ -167,6 +168,7 @@ func AssertTrue(t *testing.T, condition bool, message string) {
 
 func AssertEquals(t *testing.T, expected interface{}, actual interface{}, message string) {
 	if expected != actual {
+		debug.PrintStack()
 		t.Fatalf(message+"Expected: %s, Actual: %s", expected, actual)
 	}
 }

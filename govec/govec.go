@@ -15,15 +15,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DistributedClocks/GoVector/govec/vclock"
 	ct "github.com/daviddengcn/go-colortext"
+	"github.com/jmcmenamy/GoVector/govec/vclock"
 	"github.com/vmihailenco/msgpack/v5"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 var (
-	logToTerminal                       = true
+	// LogToTerminal controls whether internal GoLog debugging statements are printed to stdout. False by default
+	LogToTerminal                       = false
 	_             msgpack.CustomEncoder = (*vclock.VClockPayload)(nil)
 	_             msgpack.CustomDecoder = (*vclock.VClockPayload)(nil)
 )
@@ -47,7 +48,7 @@ var prefixLookup = map[zapcore.Level]string{
 }
 
 // GoLogConfig controls the logging parameters of GoLog and is taken as
-// input to GoLog initialization. See defaults in GetDefaultConfig.
+// input to GoLog initialization. See defaults in GetDefaultZapConfig or GetDefaultRegexConfig.
 type GoLogConfig struct {
 	// Buffered denotes if the logging events are buffered until flushed. This option
 	// increase logging performance at the cost of safety.
@@ -64,15 +65,14 @@ type GoLogConfig struct {
 	DecodingStrategy func([]byte, interface{}) error
 	// LogToFile determines to write logging events to a file
 	LogToFile bool
-	// Priority determines the minimum priority event to log
-	// Priority LogPriority
+	// Level determines the minimum priority event to log
 	Level zapcore.Level
-
-	AddCaller     bool
+	// AddCaller determines to add caller information to each log. For Zap logs only.
+	AddCaller bool
+	// AddStacktrace determines to add the stacktrace to each log. For Zap logs only.
 	AddStacktrace bool
 	// When buffering, the maximum amount of data the writer will buffer before flushing
 	Size int
-
 	// When buffering, how often the writer should flush data if there have been no writes. 0 if only manual Syncing
 	Interval time.Duration
 	// InitialVC is the initial vector clock value, nil by default
@@ -85,9 +85,9 @@ type GoLogConfig struct {
 	ZapLogPrefix string
 }
 
-// GetDefaultConfig returns the default GoLogConfig with default values
+// GetDefaultRegexConfig returns the default GoLogConfig with default values
 // for various fields.
-func GetDefaultConfig() GoLogConfig {
+func GetDefaultRegexConfig() GoLogConfig {
 	config := GoLogConfig{
 		Buffered:          false,
 		PrintOnScreen:     false,
@@ -107,13 +107,13 @@ func GetDefaultConfig() GoLogConfig {
 // GetDefaultZapConfig returns the default GoLogConfig with default values
 // for various fields when generating logs with Zap
 func GetDefaultZapConfig() GoLogConfig {
-	config := GetDefaultConfig()
+	config := GetDefaultRegexConfig()
 	config.GenerateRegexLogs = false
 	config.GenerateZapLogs = true
 	return config
 }
 
-// GoLogOptions provides logging parameters for individual logging statements
+// GoLogOptions provides logging parameters for individual logging statements. Used in Regex logs only.
 type GoLogOptions struct {
 	// The Log priority for this event
 	Priority zapcore.Level
@@ -193,19 +193,27 @@ type GoLog struct {
 	broadcast bool
 
 	// Priority level at which all events are logged
-	// priority LogPriority
 	level zapcore.Level
 
-	addCaller     bool
+	// Flag to indicate if caller information should be added to each log
+	addCaller bool
+
+	// Flag to indicate if the stacktrace should be added to each log
 	addStacktrace bool
 
 	// Logfile name
 	logfile string
 
-	// buffered string
-	output                   string
-	goLogWriteSyncer         *GoLogWriteSyncer
-	goLogCore                *GoLogCore
+	// buffered string. Using in regex logs only.
+	output string
+
+	// Zap WriteSyncer used to write data to the output file for Zap logs
+	goLogWriteSyncer *GoLogWriteSyncer
+
+	// Zap core used in the embedded Zap logger. Added pid and vector clock to each log
+	goLogCore *GoLogCore
+
+	// Entries to log once this GoLog becomes initialized
 	preInitializationEntries []*ZapEntryInput
 	preInitializationLogs    []*ZapLogInput
 
@@ -216,14 +224,23 @@ type GoLog struct {
 	// Internal internalLogger for printing errors
 	internalLogger *log.Logger
 
+	// Makes this GoLog concurrency safe
 	mutex *sync.RWMutex
 
+	// Embedded Zap logger to pass all logs to
 	*zap.Logger
-	initialized        bool
+
+	// Whether this GoLog has been initialized
+	initialized bool
+
+	// Cached loggers derived from the embedded Zap logger.
+	// Wrapped loggers are used to skip different levels of the stacktrace so only user
+	// code appears in the stacktrace
 	SugaredLogger      *zap.SugaredLogger
 	wrappedLogger      *zap.Logger
 	wrappedLoggerTwice *zap.Logger
-	// wrappedLoggerThrice *zap.Logger
+
+	// Prefix to add to zap log paths for where to write files. Empty is fine
 	zapLogPrefix string
 }
 
@@ -232,7 +249,6 @@ func (gv *GoLog) updateLoggers(baseLogger *zap.Logger) {
 	gv.SugaredLogger = gv.Logger.Sugar()
 	gv.wrappedLogger = gv.Logger.WithOptions(zap.AddCallerSkip(1))
 	gv.wrappedLoggerTwice = gv.Logger.WithOptions(zap.AddCallerSkip(2))
-	// gv.wrappedLoggerThrice = gv.Logger.WithOptions(zap.AddCallerSkip(3))
 }
 
 // Given an existing zap Logger, return a new zap logger that will
@@ -266,9 +282,9 @@ func (gv *GoLog) prepareGoLogWriteSyncer(filePaths []string) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Current working directory:", cwd)
+	gv.internalLogger.Print("Current working directory:", cwd)
 	gv.internalLogger.Printf("Successfully make go log write syncer with filepaths %v and prefix %v\n", filePaths, gv.zapLogPrefix)
-	goLogWriteSyncer := newGoLogWriteSyncer(baseWriteSyncer)
+	goLogWriteSyncer := NewGoLogWriteSyncer(baseWriteSyncer)
 	if gv.buffered.Load() {
 		goLogWriteSyncer.EnableBuffering(gv.size, gv.interval)
 	}
@@ -277,11 +293,11 @@ func (gv *GoLog) prepareGoLogWriteSyncer(filePaths []string) error {
 }
 
 // Creates an Uninitialized GoLog that can still be logged to with zap logs
-// Loggs are buffered and will be logged immediately once this logger is initialized
+// Logs are buffered and will be logged immediately once this logger is initialized
 // and output paths are given
 func UninitializedGoVector() *GoLog {
 	goLog := &GoLog{logging: true, loggingZap: true, level: zapcore.InfoLevel, mutex: &sync.RWMutex{}, buffered: &atomic.Bool{}}
-	if logToTerminal {
+	if LogToTerminal {
 		goLog.internalLogger = log.New(os.Stdout, "[GoVector]:", log.Lshortfile)
 		goLog.internalLogger.Printf("success?\n")
 
@@ -295,8 +311,9 @@ func UninitializedGoVector() *GoLog {
 }
 
 // InitGoVector returns a GoLog which generates a logs prefixed with
-// processid, to a file name logfilename.log. Any old log with the same
-// name will be trucated. Config controls logging options. See GoLogConfig for more details.
+// processid, to files with names logfilenames, appended with a -Log.txt or -zap-Log.txt. Any old log with the same
+// name will be truncated for non-zap logs. zap logs will be parsed and used to initialize the vector clock
+// Config controls logging options. See GoLogConfig for more details.
 func InitGoVector(processid string, logfilename string, config GoLogConfig) *GoLog {
 	gv := UninitializedGoVector()
 	gv.InitGoVector(processid, config, logfilename)
@@ -321,13 +338,12 @@ func (gv *GoLog) InitGoVector(processid string, config GoLogConfig, logfilenames
 	// defer gv.mutex.Unlock()
 	// gv := &GoLog{}
 	gv.pid = processid
-	if logToTerminal && gv.internalLogger == nil {
+	if LogToTerminal && gv.internalLogger == nil {
 		gv.internalLogger = log.New(os.Stdout, "[GoVector]:", log.Lshortfile)
 	} else if gv.internalLogger == nil {
 		gv.internalLogger = log.New(io.Discard, "[GoVector]:", log.Lshortfile)
 	}
-	gv.internalLogger.Print("Just made internal logger\n")
-	fmt.Printf("Printing here for pid %v\n", gv.pid)
+	gv.internalLogger.Printf("Just made internal logger, pid %v\n", gv.pid)
 
 	//Set parameters from config
 	gv.printonscreen = config.PrintOnScreen
@@ -811,8 +827,6 @@ func (gv *GoLog) addMetadataFields(entry zapcore.Entry, fields []zapcore.Field) 
 	)
 }
 
-// Redefine Zap methods that return *zap.Logger, so we return GoLog instead
-
 func (gv *GoLog) clone() *GoLog {
 	clone := *gv
 	return &clone
@@ -871,27 +885,20 @@ func (gv *GoLog) WithLazy(fields ...zap.Field) *GoLog {
 	}))
 }
 
-// Assumes we are holding gv.mutex
 // Ticks the clock and logs the given msg and fields and level level
-// If the zap logger isn't initialized yet, just store it for logging later
-// Returns whether we successfully passed the log to the logger. If false, the log should be stored for later when the log is initialized
-// Assumes we are holding gv.mutex and are are logging and have a defined logger
+// If the zap logger isn't initialized yet, store the entry for logging later
 func (gv *GoLog) LogLocalEventZap(level zapcore.Level, msg string, fields ...zap.Field) {
-	// if !gv.initialized.Load() {
-	// 	gv.preInitializationLogs = append(gv.preInitializationLogs, &ZapLogInput{level: level, msg: msg, fields: fields})
-	// 	return
-	// }
 	gv.wrappedLogger.Log(level, msg, fields...)
 }
 
 // PrepareSend is meant to be used immediately before sending.
-// LogMessage will be logged along with the time of send
+// mesg will be logged
 // buf is encode-able data (structure or basic type)
 // Returned is an encoded byte array with logging information.
-// This function is meant to be called before sending a packet. Usually,
-// it should Update the Vector Clock for its own process, package with
-// the clock using gob support and return the new byte array that should
-// be sent onwards using the Send Command
+// This function is meant to be called before sending a packet.
+// It updates the Vector Clock for its own process, packages with
+// the clock using gob support and returns the new byte array that should
+// be sent onwards over the network
 func (gv *GoLog) PrepareSend(mesg string, buf interface{}, opts GoLogOptions) (encodedBytes []byte) {
 	//Converting Vector Clock from Bytes and Updating the gv clock
 	// gv.logger.Printf("HEY LOOK GOT TO START OF PREPARE SEND with: %v\n", mesg)
@@ -931,14 +938,15 @@ func (gv *GoLog) PrepareSend(mesg string, buf interface{}, opts GoLogOptions) (e
 	return
 }
 
-// PrepareSend is meant to be used immediately before sending.
-// LogMessage will be logged along with the time of send
+// PrepareSendZapWrapPayload is meant to be used immediately before sending.
+// mesg will be logged
 // buf is encode-able data (structure or basic type)
+// buf is encoded inside of encodedBytes
 // Returned is an encoded byte array with logging information.
-// This function is meant to be called before sending a packet. Usually,
-// it should Update the Vector Clock for its own process, package with
-// the clock using gob support and return the new byte array that should
-// be sent onwards using the Send Command
+// This function is meant to be called before sending a packet.
+// It updates the Vector Clock for its own process, packages buf with
+// the clock using gob support and returns the new byte array that should
+// be sent onwards over the network.
 func (gv *GoLog) PrepareSendZapWrapPayload(mesg string, buf interface{}, level zapcore.Level, fields ...zap.Field) (encodedBytes []byte) {
 	//Converting Vector Clock from Bytes and Updating the gv clock
 	// gv.logger.Printf("HEY LOOK GOT TO START OF PREPARE SEND with: %v\n", mesg)
@@ -985,6 +993,13 @@ func (gv *GoLog) PrepareSendZapWrapPayload(mesg string, buf interface{}, level z
 	return
 }
 
+// PrepareSendZap is meant to be used immediately before sending.
+// mesg will be logged
+// Returned is an encoded byte array with logging information.
+// This function is meant to be called before sending a packet.
+// It updates the Vector Clock for its own process,
+// and returns the byte array that should be placed in the payload sent
+// over the network.
 func (gv *GoLog) PrepareSendZap(mesg string, level zapcore.Level, fields ...zap.Field) (encodedBytes []byte) {
 	if gv == nil {
 		return
@@ -1001,9 +1016,10 @@ func (gv *GoLog) mergeIncomingClock(mesg string, e vclock.VClockPayload, Priorit
 }
 
 // UnpackReceive is used to unmarshall network data into local structures.
-// LogMessage will be logged along with the vector time receive happened
-// buf is the network data, previously packaged by PrepareSend unpack is
-// a pointer to a structure, the same as was packed by PrepareSend.
+// mesg will be logged
+// the vector clock of this process will be merged with the vector clock received in the payload
+// buf is the network data, previously packaged by PrepareSend.
+// unpack is a pointer to a structure, the same as was packed by PrepareSend.
 // This function is meant to be called immediately after receiving
 // a packet. It unpacks the data by the program, the vector clock. It
 // updates vector clock and logs it. and returns the user data
@@ -1028,10 +1044,11 @@ func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts
 
 }
 
-// UnpackReceive is used to unmarshall network data into local structures.
-// LogMessage will be logged along with the vector time receive happened
-// buf is the network data, previously packaged by PrepareSend unpack is
-// a pointer to a structure, the same as was packed by PrepareSend.
+// UnpackReceiveZapWrapPayload is used to unmarshall network data into local structures.
+// mesg will be logged
+// the vector clock of this process will be merged with the vector clock received in the payload
+// buf is the network data, previously packaged by PrepareSendZapWrapPayload.
+// unpack is a pointer to a structure, the same as was packed by PrepareSendZapWrapPayload.
 // This function is meant to be called immediately after receiving
 // a packet. It unpacks the data by the program, the vector clock. It
 // updates vector clock and logs it. and returns the user data
@@ -1069,6 +1086,14 @@ func (gv *GoLog) unpackReceiveZapWrapPayload(mesg string, buf []byte, unpack int
 	// gv.mutex.Unlock()
 }
 
+// UnpackReceiveZap is used to unmarshall network data into local structures.
+// mesg will be logged
+// the vector clock of this process will be merged with the vector clock received in the payload
+// buf is the network data, previously packaged by PrepareSendZap.
+// unpack is a pointer to a structure, the same as was packed by PrepareSendZap.
+// This function is meant to be called immediately after receiving
+// a packet. It unpacks the data by the program, the vector clock. It
+// updates vector clock and logs it. and returns the user data
 func (gv *GoLog) UnpackReceiveZap(mesg string, buf []byte, level zapcore.Level, fields ...zap.Field) {
 	if gv == nil || buf == nil {
 		return
@@ -1095,8 +1120,3 @@ func (gv *GoLog) StopBroadcast() {
 	gv.broadcast = false
 	gv.mutex.Unlock()
 }
-
-// TODO
-// implement choosing next search index in disvis
-// change shiviz->disviz everywhere
-// make graph of performance in disviz, using same logs from previous graph

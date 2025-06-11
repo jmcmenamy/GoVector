@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/DistributedClocks/GoVector/govec"
+	"github.com/jmcmenamy/GoVector/govec"
 )
 
 // Hardcoded client/sever port values, and total messages sent
@@ -26,7 +26,7 @@ func main() {
 }
 
 func client(listen, send string) {
-	Logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	Logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultRegexConfig())
 	// sending UDP packet to specified address and port
 	conn := setupConnection(SERVERPORT, CLIENTPORT)
 	opts := govec.GetDefaultLogOptions()
@@ -51,7 +51,7 @@ func client(listen, send string) {
 
 func server(listen string) {
 
-	Logger := govec.InitGoVector("server", "server", govec.GetDefaultConfig())
+	Logger := govec.InitGoVector("server", "server", govec.GetDefaultRegexConfig())
 
 	fmt.Println("Listening on server....")
 	conn, err := net.ListenPacket("udp", ":"+listen)

@@ -4,10 +4,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// GoLogCore wraps an existing zapcore.Core and intercepts writes, to duplicate writes
-// to a GoLog logger. The interval GoLog zap logger does not use this struct
-// Assumes this is used with NewTee, in order to make a multicore with this core and the baseCore
-// This avoids needing to explicitly pass writes through to the base core
+// GoLogCore wraps an existing zapcore.Core and intercepts writes, to add
+// a pid and vector clock to every log entry
 type GoLogCore struct {
 	zapcore.Core
 	gv *GoLog

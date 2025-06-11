@@ -11,7 +11,7 @@ import (
 // Command Line arguments
 
 var (
-	logType      = flag.String("log_type", "", "Type of the log that needs to be generated (Shiviz or TSViz)")
+	logType      = flag.String("log_type", "", "Type of the log that needs to be generated (Shiviz or TSViz or Disviz)")
 	logDirectory = flag.String("log_dir", "", "Input directory which has individual node logs")
 	outputFile   = flag.String("outfile", "", "The file in which the log will be written")
 )
@@ -19,7 +19,7 @@ var (
 func parse_args() {
 	flag.Parse()
 	if *logType == "" || *logDirectory == "" || *outputFile == "" {
-		fmt.Println("Usage: GoVector --log_type [Shiviz | TSViz] --log_dir [directory] --outfile [output_file] ")
+		fmt.Println("Usage: GoVector --log_type [Shiviz | TSViz | Disviz] --log_dir [directory] --outfile [output_file] ")
 		os.Exit(1)
 	}
 }

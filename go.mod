@@ -1,4 +1,4 @@
-module github.com/DistributedClocks/GoVector
+module github.com/jmcmenamy/GoVector
 
 go 1.23
 

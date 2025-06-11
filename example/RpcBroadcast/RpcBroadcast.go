@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DistributedClocks/GoVector/govec"
-	"github.com/DistributedClocks/GoVector/govec/vrpc"
+	"github.com/jmcmenamy/GoVector/govec"
+	"github.com/jmcmenamy/GoVector/govec/vrpc"
 )
 
 var done chan int = make(chan int, 1)
@@ -47,7 +47,7 @@ func (t *Arith) Divide(args *Args, quo *Quotient) error {
 
 func rpcServer(no string, port string) {
 	fmt.Println("Starting server no. " + no + " on port " + port)
-	logger := govec.InitGoVector("server"+no, "server"+no+"logfile", govec.GetDefaultConfig())
+	logger := govec.InitGoVector("server"+no, "server"+no+"logfile", govec.GetDefaultRegexConfig())
 	arith := new(Arith)
 	server := rpc.NewServer()
 	server.Register(arith)
@@ -62,7 +62,7 @@ func rpcServer(no string, port string) {
 
 func rpcClient() {
 	fmt.Println("Starting client")
-	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultRegexConfig())
 	options := govec.GetDefaultLogOptions()
 
 	var clients [3]*rpc.Client

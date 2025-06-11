@@ -9,31 +9,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DistributedClocks/GoVector/govec"
+	"github.com/jmcmenamy/GoVector/govec"
 )
 
 var done chan int = make(chan int, 1)
 
-//Args are matematical arguments for the rpc operations
+// Args are matematical arguments for the rpc operations
 type Args struct {
 	A, B int
 }
 
-//Quotient is the result of a Divide RPC
+// Quotient is the result of a Divide RPC
 type Quotient struct {
 	Quo, Rem int
 }
 
-//Arith is an RPC math server type
+// Arith is an RPC math server type
 type Arith int
 
-//Multiply performs multiplication on two integers
+// Multiply performs multiplication on two integers
 func (t *Arith) Multiply(args *Args, reply *int) error {
 	*reply = args.A * args.B
 	return nil
 }
 
-//Divide divides a by b and returns a quotient with a remainder
+// Divide divides a by b and returns a quotient with a remainder
 func (t *Arith) Divide(args *Args, quo *Quotient) error {
 	if args.B == 0 {
 		return errors.New("divide by zero")
@@ -79,8 +79,8 @@ func rpcclient(logger *govec.GoLog) {
 }
 
 func TestRPC(t *testing.T) {
-	serverlogger := govec.InitGoVector("server", "serverlogfile", govec.GetDefaultConfig())
-	clientlogger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	serverlogger := govec.InitGoVector("server", "serverlogfile", govec.GetDefaultRegexConfig())
+	clientlogger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultRegexConfig())
 	go rpcserver(serverlogger)
 	time.Sleep(time.Millisecond)
 	go rpcclient(clientlogger)
@@ -90,8 +90,8 @@ func TestRPC(t *testing.T) {
 	client_vc := clientlogger.GetCurrentVC()
 	client_ticks, _ := client_vc.FindTicks("client")
 
-	AssertEquals(t, uint64(5), server_ticks, "Server Clock value not incremented")
-	AssertEquals(t, uint64(5), client_ticks, "Client Clock value not incremented")
+	AssertEquals(t, uint64(4), server_ticks, "Server Clock value not incremented")
+	AssertEquals(t, uint64(4), client_ticks, "Client Clock value not incremented")
 }
 
 func AssertEquals(t *testing.T, expected interface{}, actual interface{}, message string) {

@@ -18,7 +18,8 @@ type GoLogWriteSyncer struct {
 	active zapcore.WriteSyncer
 }
 
-func newGoLogWriteSyncer(unbuf zapcore.WriteSyncer) *GoLogWriteSyncer {
+// Create a new GoLogWriteSyncer, which eventually writes to unbuf. Initially unbuffered
+func NewGoLogWriteSyncer(unbuf zapcore.WriteSyncer) *GoLogWriteSyncer {
 	return &GoLogWriteSyncer{
 		unbuf:  unbuf,
 		buf:    nil,
@@ -26,6 +27,7 @@ func newGoLogWriteSyncer(unbuf zapcore.WriteSyncer) *GoLogWriteSyncer {
 	}
 }
 
+// Write calls the Write method of the currently active Zap WriteSyncer
 func (s *GoLogWriteSyncer) Write(p []byte) (int, error) {
 	s.mu.RLock()
 	w := s.active
@@ -33,6 +35,7 @@ func (s *GoLogWriteSyncer) Write(p []byte) (int, error) {
 	return w.Write(p)
 }
 
+// Sync calls the Sync method of the currently active Zap WriteSyncer
 func (s *GoLogWriteSyncer) Sync() error {
 	s.mu.RLock()
 	w := s.active

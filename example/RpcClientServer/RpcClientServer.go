@@ -8,8 +8,8 @@ import (
 	"net/rpc"
 	"time"
 
-	"github.com/DistributedClocks/GoVector/govec"
-	"github.com/DistributedClocks/GoVector/govec/vrpc"
+	"github.com/jmcmenamy/GoVector/govec"
+	"github.com/jmcmenamy/GoVector/govec/vrpc"
 )
 
 var done chan int = make(chan int, 1)
@@ -45,7 +45,7 @@ func (t *Arith) Divide(args *Args, quo *Quotient) error {
 
 func rpcServer() {
 	fmt.Println("Starting server")
-	logger := govec.InitGoVector("server", "serverlogfile", govec.GetDefaultConfig())
+	logger := govec.InitGoVector("server", "serverlogfile", govec.GetDefaultRegexConfig())
 	arith := new(Arith)
 	server := rpc.NewServer()
 	server.Register(arith)
@@ -60,7 +60,7 @@ func rpcServer() {
 
 func rpcClient() {
 	fmt.Println("Starting client")
-	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultRegexConfig())
 	options := govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", "127.0.0.1:8080", logger, options)
 	if err != nil {

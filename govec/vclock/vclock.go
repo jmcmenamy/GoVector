@@ -139,6 +139,7 @@ func (vc VClock) ReturnVCString() string {
 	return buffer.String()
 }
 
+// ReturnVCStringZap returns a zap Field encoding of a vector clock
 func (vc VClock) ReturnVCStringZap(fieldName string) zap.Field {
 	//sort
 	ids := make([]string, len(vc))
