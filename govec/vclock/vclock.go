@@ -1,3 +1,4 @@
+// package vlock provides methods for maintaining a Vector Clock
 package vclock
 
 import (
@@ -320,8 +321,7 @@ func (d *VClockPayload) DecodeMsgpack(dec *msgpack.Decoder) error {
 	if err != nil {
 		return err
 	}
-	var vcMap map[string]uint64
-	vcMap = make(map[string]uint64)
+	vcMap := make(map[string]uint64)
 
 	for i := 0; i < mapLen; i++ {
 
@@ -336,11 +336,7 @@ func (d *VClockPayload) DecodeMsgpack(dec *msgpack.Decoder) error {
 		}
 		vcMap[key] = value
 	}
-	err = dec.DecodeMulti(&d.Pid, &d.Payload, &d.VcMap)
 	d.VcMap = vcMap
-	if err != nil {
-		return err
-	}
 
 	return nil
 }

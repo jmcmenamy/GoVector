@@ -59,7 +59,7 @@ func TestSendAndUnpackInt(t *testing.T) {
 
 	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
-	packed := gv.PrepareSend("TestMessage1", 1337, opts)
+	packed := gv.PrepareSendRegex("TestMessage1", 1337, opts)
 
 	vc := gv.GetCurrentVC()
 	n, _ := vc.FindTicks(TestPID)
@@ -67,7 +67,7 @@ func TestSendAndUnpackInt(t *testing.T) {
 	AssertEquals(t, uint64(1), n, "PrepareSend: Clock value incremented")
 
 	var response int
-	gv.UnpackReceive("TestMessage2", packed, &response, opts)
+	gv.UnpackReceiveRegex("TestMessage2", packed, &response, opts)
 
 	vc = gv.GetCurrentVC()
 	n, _ = vc.FindTicks(TestPID)
@@ -81,7 +81,7 @@ func TestSendAndUnpackStrings(t *testing.T) {
 
 	gv := InitGoVector(TestPID, "TestLogFile", GetDefaultRegexConfig())
 	opts := GetDefaultLogOptions()
-	packed := gv.PrepareSend("TestMessage1", "DistClocks!", opts)
+	packed := gv.PrepareSendRegex("TestMessage1", "DistClocks!", opts)
 
 	vc := gv.GetCurrentVC()
 	n, _ := vc.FindTicks(TestPID)
@@ -89,7 +89,7 @@ func TestSendAndUnpackStrings(t *testing.T) {
 	AssertEquals(t, uint64(1), n, "PrepareSend: Clock value incremented. ")
 
 	var response string
-	gv.UnpackReceive("TestMessage2", packed, &response, opts)
+	gv.UnpackReceiveRegex("TestMessage2", packed, &response, opts)
 
 	vc = gv.GetCurrentVC()
 	n, _ = vc.FindTicks(TestPID)
@@ -108,7 +108,7 @@ func TestBroadcast(t *testing.T) {
 	var packed []byte
 
 	for i := 0; i < 5; i++ {
-		packed = gv.PrepareSend("", 1337, opts)
+		packed = gv.PrepareSendRegex("", 1337, opts)
 	}
 
 	gv.StopBroadcast()
@@ -119,7 +119,7 @@ func TestBroadcast(t *testing.T) {
 	AssertEquals(t, uint64(1), n, "PrepareSend: Clock value incremented")
 
 	var response int
-	gv.UnpackReceive("TestMessage", packed, &response, opts)
+	gv.UnpackReceiveRegex("TestMessage", packed, &response, opts)
 
 	vc = gv.GetCurrentVC()
 	n, _ = vc.FindTicks(TestPID)
@@ -136,11 +136,11 @@ func BenchmarkPrepare(b *testing.B) {
 	var packed []byte
 
 	for i := 0; i < b.N; i++ {
-		packed = gv.PrepareSend("TestMessage1", 1337, opts)
+		packed = gv.PrepareSendRegex("TestMessage1", 1337, opts)
 	}
 
 	var response int
-	gv.UnpackReceive("TestMessage2", packed, &response, opts)
+	gv.UnpackReceiveRegex("TestMessage2", packed, &response, opts)
 
 }
 
@@ -150,12 +150,12 @@ func BenchmarkUnpack(b *testing.B) {
 	opts := GetDefaultLogOptions()
 
 	var packed []byte
-	packed = gv.PrepareSend("TestMessage1", 1337, opts)
+	packed = gv.PrepareSendRegex("TestMessage1", 1337, opts)
 
 	var response int
 
 	for i := 0; i < b.N; i++ {
-		gv.UnpackReceive("TestMessage2", packed, &response, opts)
+		gv.UnpackReceiveRegex("TestMessage2", packed, &response, opts)
 	}
 
 }

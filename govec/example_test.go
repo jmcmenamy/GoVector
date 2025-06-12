@@ -79,7 +79,7 @@ func ExampleGoLog_basic() {
 	//Prior to sending a message, call PrepareSend on the payload to
 	//encode the payload and append this processes vector clock to the
 	//payload
-	encodedVCpayload := Logger.PrepareSend("Sending Message", messagepayload, opts)
+	encodedVCpayload := Logger.PrepareSendRegex("Sending Message", messagepayload, opts)
 
 	//encodedVCpayload is ready to be written to the network
 	//ex) conn.Write(encodedVCpayload)
@@ -95,7 +95,7 @@ func ExampleGoLog_basic() {
 
 	//Call UnpackReceive on received messages to update local vector
 	//clock values, and decode the original message.
-	Logger.UnpackReceive("Received Message from server", encodedVCpayload, &incommingMessage, opts)
+	Logger.UnpackReceiveRegex("Received Message from server", encodedVCpayload, &incommingMessage, opts)
 	fmt.Printf("Received Message: %s\n", incommingMessage)
 
 	//Important local events can be timestamped with vector clocks
@@ -147,12 +147,12 @@ func ExampleGoLog_tSVizCompatable() {
 
 	//Prepare a Message
 	messagepayload := []byte("samplepayload")
-	finalsend := Logger.PrepareSend("Sending Message", messagepayload, opts)
+	finalsend := Logger.PrepareSendRegex("Sending Message", messagepayload, opts)
 	//In Receiving Process
 
 	//receive message
 	var incommingMessage []byte
-	Logger.UnpackReceive("Received Message from server", finalsend, &incommingMessage, opts)
+	Logger.UnpackReceiveRegex("Received Message from server", finalsend, &incommingMessage, opts)
 	fmt.Printf("Received Message: %s\n", incommingMessage)
 	//Can be called at any point
 	Logger.LogLocalEvent("Example Complete", opts)

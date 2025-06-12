@@ -22,11 +22,14 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// LogToTerminal controls whether internal GoLog debugging statements are printed to stdout.
+// It is false by default.
+var LogToTerminal = false
+
+// Ensure VClockPayload implements msgpack.CustomEncoder and msgpack.CustomDecoder.
 var (
-	// LogToTerminal controls whether internal GoLog debugging statements are printed to stdout. False by default
-	LogToTerminal                       = false
-	_             msgpack.CustomEncoder = (*vclock.VClockPayload)(nil)
-	_             msgpack.CustomDecoder = (*vclock.VClockPayload)(nil)
+	_ msgpack.CustomEncoder = (*vclock.VClockPayload)(nil)
+	_ msgpack.CustomDecoder = (*vclock.VClockPayload)(nil)
 )
 
 // colorLookup is the array of status to string from runtime/proc.go
@@ -233,10 +236,11 @@ type GoLog struct {
 	// Whether this GoLog has been initialized
 	initialized bool
 
-	// Cached loggers derived from the embedded Zap logger.
+	// Sugared logger derived from the embedded Zap logger.
+	SugaredLogger *zap.SugaredLogger
+
 	// Wrapped loggers are used to skip different levels of the stacktrace so only user
 	// code appears in the stacktrace
-	SugaredLogger      *zap.SugaredLogger
 	wrappedLogger      *zap.Logger
 	wrappedLoggerTwice *zap.Logger
 
@@ -538,10 +542,12 @@ func readLastLine(filePath string) (string, error) {
 func (gv *GoLog) prepareZapLogger(filePaths []string) error {
 	var firstFilePath string
 	for _, filePath := range filePaths {
-		adjustedPath := gv.zapLogPrefix + "/" + filePath
-		_, err := os.Stat(adjustedPath)
+		if gv.zapLogPrefix != "" {
+			filePath = gv.zapLogPrefix + "/" + filePath
+		}
+		_, err := os.Stat(filePath)
 		if err == nil {
-			firstFilePath = adjustedPath
+			firstFilePath = filePath
 			break
 		} else {
 			gv.internalLogger.Printf("Got err in state for filePath %v for pid %v: %v\n", filePath, gv.pid, err.Error())
@@ -899,7 +905,7 @@ func (gv *GoLog) LogLocalEventZap(level zapcore.Level, msg string, fields ...zap
 // It updates the Vector Clock for its own process, packages with
 // the clock using gob support and returns the new byte array that should
 // be sent onwards over the network
-func (gv *GoLog) PrepareSend(mesg string, buf interface{}, opts GoLogOptions) (encodedBytes []byte) {
+func (gv *GoLog) PrepareSendRegex(mesg string, buf interface{}, opts GoLogOptions) (encodedBytes []byte) {
 	//Converting Vector Clock from Bytes and Updating the gv clock
 	// gv.logger.Printf("HEY LOOK GOT TO START OF PREPARE SEND with: %v\n", mesg)
 	if !gv.broadcast {
@@ -1023,7 +1029,7 @@ func (gv *GoLog) mergeIncomingClock(mesg string, e vclock.VClockPayload, Priorit
 // This function is meant to be called immediately after receiving
 // a packet. It unpacks the data by the program, the vector clock. It
 // updates vector clock and logs it. and returns the user data
-func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts GoLogOptions) {
+func (gv *GoLog) UnpackReceiveRegex(mesg string, buf []byte, unpack interface{}, opts GoLogOptions) {
 	gv.mutex.Lock()
 
 	if opts.Priority >= gv.level {
@@ -1053,7 +1059,7 @@ func (gv *GoLog) UnpackReceive(mesg string, buf []byte, unpack interface{}, opts
 // a packet. It unpacks the data by the program, the vector clock. It
 // updates vector clock and logs it. and returns the user data
 func (gv *GoLog) UnpackReceiveZapWrapPayload(mesg string, buf []byte, unpack interface{}, level zapcore.Level, fields ...zap.Field) {
-	gv.unpackReceiveZapWrapPayload(mesg, buf, unpack, level, 1, fields)
+	gv.unpackReceiveZapWrapPayload(mesg, buf, unpack, level, 2, fields)
 }
 
 func (gv *GoLog) unpackReceiveZapWrapPayload(mesg string, buf []byte, unpack interface{}, level zapcore.Level, wrapNum int, fields []zap.Field) {
@@ -1066,7 +1072,7 @@ func (gv *GoLog) unpackReceiveZapWrapPayload(mesg string, buf []byte, unpack int
 	// Just use msgpack directly
 	err := gv.decodingStrategy(buf, &e)
 	if err != nil {
-		gv.internalLogger.Printf("for mesg %v, got err %v, num bytes is %v\n", mesg, err.Error(), len(buf))
+		gv.internalLogger.Printf("for mesg %v, got err %v, num bytes is %v, Vclock is %v, payload is %v\n", mesg, err.Error(), len(buf), e, e.Payload)
 	}
 
 	// gv.logger.Printf("Merging incoming clocks for %v\n", gv.logfile)

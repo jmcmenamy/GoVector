@@ -74,10 +74,10 @@ func main() {
 	fmt.Println("Hello World")
 
 	/*	gv := govec.InitGoVector("myPID", "log")
-		buf := gv.PrepareSend("Message", 137)
+		buf := gv.PrepareSendRegex("Message", 137)
 
 		var reply int
-		gv.UnpackReceive("message", buf, &reply)
+		gv.UnpackReceiveRegex("message", buf, &reply)
 		fmt.Println(reply)*/
 
 	clock := vclock.New()

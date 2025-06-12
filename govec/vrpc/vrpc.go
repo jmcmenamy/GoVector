@@ -81,7 +81,7 @@ func (c *RPCClientCodec) WriteRequest(req *rpc.Request, param interface{}) (err 
 		return
 	}
 
-	buf := c.Logger.PrepareSend("Making RPC call", param, c.Options)
+	buf := c.Logger.PrepareSendRegex("Making RPC call", param, c.Options)
 	if err = c.Enc.Encode(buf); err != nil {
 		return
 	}
@@ -101,7 +101,7 @@ func (c *RPCClientCodec) ReadResponseBody(body interface{}) (err error) {
 	if err = c.Dec.Decode(&buf); err != nil {
 		return
 	}
-	c.Logger.UnpackReceive("Received RPC Call response from server", buf, body, c.Options)
+	c.Logger.UnpackReceiveRegex("Received RPC Call response from server", buf, body, c.Options)
 	return nil
 }
 
@@ -135,7 +135,7 @@ func (c *RPCServerCodec) ReadRequestBody(body interface{}) (err error) {
 	if err = c.Dec.Decode(&buf); err != nil {
 		return
 	}
-	c.Logger.UnpackReceive("Received RPC request", buf, body, c.Options)
+	c.Logger.UnpackReceiveRegex("Received RPC request", buf, body, c.Options)
 	return nil
 }
 
@@ -143,7 +143,7 @@ func (c *RPCServerCodec) ReadRequestBody(body interface{}) (err error) {
 // to the client
 func (c *RPCServerCodec) WriteResponse(r *rpc.Response, body interface{}) (err error) {
 	Encode(c, r)
-	buf := c.Logger.PrepareSend("Sending response to RPC request", body, c.Options)
+	buf := c.Logger.PrepareSendRegex("Sending response to RPC request", body, c.Options)
 	Encode(c, buf)
 	return c.EncBuf.Flush()
 }
