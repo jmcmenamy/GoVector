@@ -98,6 +98,27 @@ Which produces these logs in `LogFile-zap-Log.txt`:
 
 For complete documentation with examples see GoVector's [documentation](https://pkg.go.dev/github.com/jmcmenamy/GoVector/govec).
 
+**Note for 6.5840 students**: For the vector clocks in the logs to be valid, it is important that only one process on the device thinks it is a particular raft node at a given time. For example, when I took the class, goroutines acting as a Raft node would learn they've been killed by periodically checking a flag in the struct:
+
+```go
+func (rf *Raft) killed() bool {
+	z := atomic.LoadInt32(&rf.dead)
+	return z == 1
+}
+```
+
+The testing code in `config.go` would crash and restart a raft node by doing `atomic.StoreInt32(&rf.dead, 1)` and making a new `Raft` struct with the same config, which means the new goroutine would be writing to the same file.
+
+Two goroutines writing to the same file would produce invalid vector clocks, so a band-aid fix was to do:
+
+```go
+if !rf.killed() {
+    rf.Info(message)
+}
+```
+
+in the util function that handles logging. It is still possible to produce invalid logs doing this, but I never hit that race condition when testing, so more synchronization wasn't needed.
+
 ### Generating DisViz compatible logs
 
 By default, when you download the GoVector package using the go get command, the command installs a binary of the top-level file `govec.go` by the name of GoVector in the directory `$GOPATH/bin`. As long as this directory is part of your path, you can run the GoVector binary to generate a DisViz compatible log from all the logs in a given directory.
@@ -112,9 +133,11 @@ To generate a DisViz-compatible log file called `hello.log` from all log files i
 $ GoVector --log_type disviz --log_dir path/to/logs --outfile hello.log
 ```
 
+See [this repo](https://github.com/jmcmenamy/meng_project) for a description of how to use these tools together.
+
 ### Zap API
 
-The [`GoLog`](https://pkg.go.dev/github.com/jmcmenamy/GoVector/govec#GoLog) struct embeds a Zap [`Logger`](https://pkg.go.dev/go.uber.org/zap#Logger), so the entire Zap API is available from a `GoLog` object (e.g. `GoLog.Info()`, `GoLog.With()`). For a quick intro to Zap, see section 4.2 (page 38) [here](https://github.com/jmcmenamy/meng_project/blob/main/Josiah_MEng_Thesis.pdf), or the [documentation](https://pkg.go.dev/go.uber.org/zap)
+The [`GoLog`](https://pkg.go.dev/github.com/jmcmenamy/GoVector/govec#GoLog) struct embeds a Zap [`Logger`](https://pkg.go.dev/go.uber.org/zap#Logger), so the entire Zap API is available from a `GoLog` object (e.g. `GoLog.Info()`, `GoLog.With()`). For a quick intro to Zap, see section 4.2 (page 38) [here](https://github.com/jmcmenamy/meng_project/blob/main/thesis/Josiah_MEng_Thesis.pdf), or the [documentation](https://pkg.go.dev/go.uber.org/zap)
 
 ### Motivation
 
@@ -132,7 +155,20 @@ If you need to make a change just for your development, it's also easy to use a 
 replace github.com/jmcmenamy/GoVector => /path/to/your/local/GoVector
 ```
 
-This tells Go to use your local copy instead of downloading the version from the remote source. Happy logging!
+This tells Go to use your local copy instead of downloading the version from the remote source.
+
+If you use GoVector in academic work, you can cite the following:
+
+```bibtex
+@misc{mcmenamy2025disviz,
+  author = {Josiah McMenamy},
+  title = {DisViz: Visualizing real-world distributed system logs with space time diagrams},
+  year = {2025},
+  howpublished = {\url{https://github.com/jmcmenamy/meng_project/blob/main/thesis/Josiah_MEng_Thesis.pdf}}
+}
+```
+
+Happy logging!
 
 <!-- July 2017: Brokers are no longer supported, maybe they will come back.
 
