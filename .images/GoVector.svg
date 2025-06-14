@@ -4,7 +4,7 @@
 <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
  width="499.000000pt" height="163.000000pt" viewBox="0 0 499.000000 163.000000"
  preserveAspectRatio="xMidYMid meet"
- style="background: #ffffff; background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); color-scheme: light dark;"
+ style="width: 100%; display: block; margin: 0 auto; background: #ffffff; background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); color-scheme: light dark;"
  >
 <g transform="translate(0.000000,163.000000) scale(0.100000,-0.100000)"
    style="fill: light-dark(var(--ge-dark-color, #121212), #ffffff); stroke: light-dark(var(--ge-dark-color, #121212), #ffffff);">
