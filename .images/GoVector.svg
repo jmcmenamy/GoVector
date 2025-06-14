@@ -4,8 +4,8 @@
 <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
  width="499.000000pt" height="163.000000pt" viewBox="0 0 499.000000 163.000000"
  preserveAspectRatio="xMidYMid meet">
+<div style="display: inline-block; font-size: 12px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; "><font style="font-size: 14px;">JSON logs</font></div>
 <g transform="translate(0.000000,163.000000) scale(0.100000,-0.100000)"
-fill="#121212" stroke="#121212"
    style="fill: light-dark(var(--ge-dark-color, #121212), #ffffff); stroke: light-dark(var(--ge-dark-color, #121212), #ffffff);">
 <path d="M412 1294 c-195 -52 -315 -229 -316 -464 0 -218 80 -367 239 -446 61
 -30 87 -37 157 -41 180 -11 316 60 388 203 l19 39 1 -112 c0 -94 3 -113 15
