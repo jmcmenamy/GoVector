@@ -77,7 +77,7 @@ func main() {
 		encodedVCPayload: Logger.PrepareSendZap("Sending Message", zapcore.InfoLevel, zap.String("stringField", "value")),
 	}
 
-    // payload is encoded, sent, then decoded
+	// payload is encoded, sent, then decoded
 	// Then, we can grab the GoLog payload out of the decoded user payload.
 	Logger.UnpackReceiveZap("Received Message from server", payloadToSend.encodedVCPayload, zapcore.InfoLevel)
 }
@@ -107,7 +107,7 @@ func (rf *Raft) killed() bool {
 }
 ```
 
-The testing code in `config.go` would crash and restart a raft node by doing `atomic.StoreInt32(&rf.dead, 1)` and making a new `Raft` struct with the same config, which means the new goroutine would be writing to the same file.
+The testing code in `config.go` would crash and restart a raft node by doing `atomic.StoreInt32(&rf.dead, 1)` and making a new `Raft` struct with the same config, which means the new goroutine would be writing to the same file. The old goroutine could be running at the same time for a short while until the next time it checks if it has been killed.
 
 Two goroutines writing to the same file would produce invalid vector clocks, so a band-aid fix was to do:
 
@@ -117,7 +117,7 @@ if !rf.killed() {
 }
 ```
 
-in the util function that handles logging. It is still possible to produce invalid logs doing this, but I never hit that race condition when testing, so more synchronization wasn't needed.
+in my util function that handles logging. It is still possible to produce invalid logs doing this, but I never hit that race condition when testing, so more synchronization wasn't needed.
 
 ### Generating DisViz compatible logs
 
@@ -149,7 +149,7 @@ I have not sufficiently tested this package beyond the capabilities required for
 
 If you find a bug or want a feature that doesn't exist, feel free to create an [issue](https://github.com/jmcmenamy/GoVector/issues) or make a [pull request](https://github.com/jmcmenamy/GoVector/pulls)!
 
-If you need to make a change just for your development, it's also easy to use a local copy of this repo. Simply clone this repo, and in places were you need to use it, modify your `go.mod` file to include a [replace directive](https://go.dev/ref/mod#go-mod-file-replace):
+If you need to make a change just for your development, it's also easy to use a local copy of this repo. Simply clone this repo, and in places where you need to use it, modify your `go.mod` file to include a [replace directive](https://go.dev/ref/mod#go-mod-file-replace):
 
 ```go
 replace github.com/jmcmenamy/GoVector => /path/to/your/local/GoVector
