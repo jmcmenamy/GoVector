@@ -1,4 +1,8 @@
-![GoVector.png](.images/GoVector.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".images/GoVectorDark.svg">
+  <source media="(prefers-color-scheme: light)" srcset=".images/GoVectorLight.svg">
+  <img alt="GoVector Logo" src=".images/GoVectorLight.svg">
+</picture>
 
 [![GoDoc](https://pkg.go.dev/badge/github.com/jmcmenamy/GoVector)](https://pkg.go.dev/github.com/jmcmenamy/GoVector)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jmcmenamy/GoVector)](https://goreportcard.com/report/github.com/jmcmenamy/GoVector)

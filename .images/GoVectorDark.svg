@@ -4,10 +4,9 @@
 <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
  width="499.000000pt" height="163.000000pt" viewBox="0 0 499.000000 163.000000"
  preserveAspectRatio="xMidYMid meet"
- style="background: #ffffff; background-color: light-dark(#ffffff, #121212); color-scheme: light dark;"
  >
 <g transform="translate(-9,163.000000) scale(0.100000,-0.100000)"
-   style="fill: light-dark( #121212, #f0f6fc); stroke: light-dark( #121212, #f0f6fc);">
+   style="fill: #f0f6fc; stroke: #f0f6fc;">
 <path d="M412 1294 c-195 -52 -315 -229 -316 -464 0 -218 80 -367 239 -446 61
 -30 87 -37 157 -41 180 -11 316 60 388 203 l19 39 1 -112 c0 -94 3 -113 15
 -113 13 0 15 31 15 215 l0 215 -195 0 c-123 0 -195 -4 -195 -10 0 -6 67 -10
