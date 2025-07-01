@@ -21,7 +21,7 @@ is done using 2 key functions, `PrepareSendZap` and `UnpackReceiveZap`. `Prepare
 clock with the received clock, and logs a receiving event.
 
 This library can be added to a Go project to generate a
-[DisViz](https://github.com/jmcmenamy/disviz)-compatible vector-clock
+[DisViz](https://jmcmenamy.github.io/disviz/)-compatible vector-clock
 timestamped log of events in a distributed system.
 
 * `govec/`    	    : Contains the Library and all its dependencies
@@ -137,7 +137,7 @@ To generate a DisViz-compatible log file called `hello.log` from all log files i
 $ GoVector --log_type disviz --log_dir path/to/logs --outfile hello.log
 ```
 
-See [this repo](https://github.com/jmcmenamy/meng_project) for a description of how to use these tools together.
+See [this repo](https://jmcmenamy.github.io/meng_project/) for a description of how to use these tools together.
 
 ### Zap API
 
@@ -145,11 +145,11 @@ The [`GoLog`](https://pkg.go.dev/github.com/jmcmenamy/GoVector/govec#GoLog) stru
 
 ### Motivation
 
-The reason for making a fork of the original [GoVector](https://github.com/DistributedClocks/GoVector) was to make it easier to add information to individual logs. Using the Zap API provides a typesafe way to add fields to each log, and makes it easy to output JSON logs that [DisViz](https://github.com/jmcmenamy/disviz) can parse and display to the user.
+The reason for making a fork of the original [GoVector](https://github.com/DistributedClocks/GoVector) was to make it easier to add information to individual logs. Using the Zap API provides a typesafe way to add fields to each log, and makes it easy to output JSON logs that [DisViz](https://jmcmenamy.github.io/disviz/) can parse and display to the user.
 
 ### Modifying GoVector
 
-I have not sufficiently tested this package beyond the capabilities required for my [MEng project](https://github.com/jmcmenamy/meng_project/). There are many opinionated pieces of the implementation, and I'm sure there are bugs lurking around.
+I have not sufficiently tested this package beyond the capabilities required for my [MEng project](https://jmcmenamy.github.io/meng_project/). There are many opinionated pieces of the implementation, and I'm sure there are bugs lurking around.
 
 If you find a bug or want a feature that doesn't exist, feel free to create an [issue](https://github.com/jmcmenamy/GoVector/issues) or make a [pull request](https://github.com/jmcmenamy/GoVector/pulls)!
 
