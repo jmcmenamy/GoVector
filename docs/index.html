@@ -1,25 +1,49 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title></title>
-  <!-- jQuery (required by strapdown.js) -->
-  <script src="jquery-3.6.0.min.js"></script>
-  <!-- MathJax (optional for LaTeX) -->
-  <!-- <script async src="tex-mml-chtml.js"></script> -->
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-    }
-  </style>
-</head>
 
-<body>
+  <!-- Local GitHub Markdown CSS -->
+  <link rel="stylesheet" href="github-markdown.css">
+  <!-- <script src="jquery-3.6.0.min.js"></script> -->
+
+  <style>
+    body, .navbar {
+      margin: 0;
+      /* padding: 2rem; */
+      background-color: var(--bgColor-default) !important;
+      /* font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; */
+    }
+
+    .markdown-body {
+      margin-bottom: 5rem;
+    }
+
+    .navbar-inverse {
+    background-color: var(--bgColor-default) !important;
+    border-color: var(--borderColor-default) !important;
+    }
+
+  .navbar-inverse .navbar-toggle {
+    color: var(--fgColor-muted) !important;
+    background-color: var(--bgColor-default) !important;
+    border-color: var(--borderColor-default) !important;
+  }
+
+  .navbar-inverse .navbar-toggle:hover {
+    background-color: var(--borderColor-default) !important;
+    /* border-color: var(--borderColor-default) !important; */
+  }
+  </style>
+
+
+
+</head>
+<body>  
   <script>
     const base = 'https://raw.githubusercontent.com/jmcmenamy/GoVector/main/';
-    const markdownUrl = base + 'README.md';
-
     const rewriteRelativeLinksAndAttrs = (markdown, baseUrl) => {
       // Rewrite Markdown links/images:
       markdown = markdown.replace(/(!?\[.*?\])\((?!https?:\/\/|#)(.*?)\)/g, (_, label, relPath) => {
@@ -33,110 +57,47 @@
 
       return markdown;
     };
-  
-    fetch(markdownUrl)
-      .then(res => res.text())
+    // Load the rendered HTML from rendered_readme.html
+    fetch('rendered_readme.html')
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to load rendered README');
+        return response.text();
+      })
       .then(markdown => {
+        // document.getElementById('readme').innerHTML = html;
+
+
         const rewrittenMarkdown = rewriteRelativeLinksAndAttrs(markdown, base);
-        const textarea = document.createElement('textarea');
+
+        const textarea = document.createElement('article');
         textarea.setAttribute('toc', '');
-        textarea.style.display = 'none';
+        textarea.classList.add('markdown-body');
         textarea.innerHTML = rewrittenMarkdown;
+        // Now generate IDs on the inserted headers
+        textarea.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+          if (!h.id) {
+            h.id = h.textContent
+              .trim()
+              .toLowerCase()
+              .replace(/[^\w\s-]/g, '')
+              .replace(/\s+/g, '-')
+              .replace(/-+/g, '-');
+          }
+        });
         document.body.appendChild(textarea);
         const script = document.createElement('script');
         script.src = 'strapdown.js';
         document.body.appendChild(script);
         script.onload = () => {
           document.body.style.display = 'block';
+          $('#content').addClass('markdown-body');
           $('#headline').append('<a href="https://github.com/jmcmenamy/GoVector">Source Code</a>')
         }
-        // document.body.appendChild(script);
+        document.body.appendChild(script);
       })
-      .catch(err => {
-        document.body.innerHTML = `<pre>Error loading markdown: ${err.message}</pre>`;
+      .catch(error => {
+        document.getElementById('readme').innerHTML = '<p style="color:red;">Error loading README: ' + error.message + '</p>';
       });
   </script>
 </body>
-<style>
-  :root {
-    --bg-color: #ffffff;
-    --bg-color-muted: #f6f8fa;
-    --bg-color-neutral-muted: #818b981f;
-    --text-color: #000000;
-    --link-color: #1a0dab;
-    --code-bg: #f5f5f5;
-    --heading-color: #000000;
-    --inline-code-color: #d6336c;
-    --border-color: #eee;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg-color: #1e1e1e;
-      --bg-color-muted: #151b23;
-      --bg-color-neutral-muted: #656c7633;
-      --text-color: #d4d4d4;
-      --link-color: #4ea1ff;
-      --code-bg: #2d2d2d;
-      --heading-color: #ffffff;
-      --inline-code-color: #ff79c6;
-      --border-color: #000;
-    }
-  }
-
-  .navbar-inverse {
-    background-color: var(--bg-color) !important;
-    border-color: var(--border-color) !important;
-  }
-
-  .navbar-inverse .navbar-toggle {
-    background-color: var(--bg-color) !important;
-    border-color: var(--border-color) !important;
-  }
-
-
-
-  body {
-    background-color: var(--bg-color);
-    color: var(--text-color);
-  }
-
-  a {
-    color: var(--link-color);
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    color: var(--heading-color);
-    border-color: var(--text-color);
-  }
-  pre, code {
-    background-color: var(--bg-color-muted);
-    color: var(--text-color) !important;
-  }
-
-  pre {
-    background-color: var(--bg-color-muted);
-  }
-
-  code {
-    background-color: var(--bg-color-neutral-muted);
-  }
-
-  pre *, code * {
-    color: var(--text-color) !important;
-  }
-
-
-  blockquote {
-    border-left: 4px solid var(--link-color);
-    color: var(--text-color);
-    padding-left: 1em;
-  }
-
-  table {
-    color: var(--text-color);
-  }
-</style>
 </html>
-
-

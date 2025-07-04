@@ -4,20 +4,13 @@
   <img alt="GoVector Logo" src=".images/GoVectorLight.svg">
 </picture>
 
-[![GoDoc](https://pkg.go.dev/badge/github.com/jmcmenamy/GoVector)](https://pkg.go.dev/github.com/jmcmenamy/GoVector)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jmcmenamy/GoVector)](https://goreportcard.com/report/github.com/jmcmenamy/GoVector)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GoDoc](https://pkg.go.dev/badge/github.com/jmcmenamy/GoVector)](https://pkg.go.dev/github.com/jmcmenamy/GoVector) [![Go Report Card](https://goreportcard.com/badge/github.com/jmcmenamy/GoVector)](https://goreportcard.com/report/github.com/jmcmenamy/GoVector) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
-GoVector is a vector clock logging library written in Go, forked from and built off the original [GoVector](https://github.com/DistributedClocks/GoVector). The [vector
-clock algorithm](https://en.wikipedia.org/wiki/Vector_clock) is used
-to order events in distributed systems in the absence of a centralized
-clock. GoVector implements the vector clock algorithm and provides
-feature-rich logging using [Zap](https://pkg.go.dev/go.uber.org/zap#section-readme).
+GoVector is a vector clock logging library written in Go, forked from and built off the original [GoVector](https://github.com/DistributedClocks/GoVector). The [vector clock algorithm](https://en.wikipedia.org/wiki/Vector_clock) is used to order events in distributed systems in the absence of a centralized clock. GoVector implements the vector clock algorithm and provides feature-rich logging using [Zap](https://pkg.go.dev/go.uber.org/zap#section-readme).
 
 Sending vector clocks between nodes in a distributed system
-is done using 2 key functions, `PrepareSendZap` and `UnpackReceiveZap`. `PrepareSendZap` updates GoVector's local time, logs a sending event, and returns a byte array to send on the network.
-`UnpackReceiveZap` decodes messages from the network, merges GoVector's local
+is done using 2 key functions, `PrepareSendZap` and `UnpackReceiveZap`. `PrepareSendZap` updates GoVector's local time, logs a sending event, and returns a byte array to send on the network. `UnpackReceiveZap` decodes messages from the network, merges GoVector's local
 clock with the received clock, and logs a receiving event.
 
 This library can be added to a Go project to generate a
@@ -38,7 +31,7 @@ Code](https://go.dev/doc/code).
 Once you set up your environment, GoVector can be installed with the go
 tool command:
 
-```
+```shell
 $ go install github.com/jmcmenamy/GoVector
 ```
 
@@ -133,7 +126,7 @@ By default, when you download the GoVector package using the go get command, the
 
 To generate a DisViz-compatible log file called `hello.log` from all log files in the directory `path/to/logs` do the following:
 
-```
+```shell
 $ GoVector --log_type disviz --log_dir path/to/logs --outfile hello.log
 ```
 
