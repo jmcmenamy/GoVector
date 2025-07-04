@@ -6,7 +6,7 @@
   <title></title>
 
   <!-- Local GitHub Markdown CSS -->
-  <link rel="stylesheet" href="github-markdown.css">
+  <!-- <link rel="stylesheet" href="github-markdown.css"> -->
   <!-- <script src="jquery-3.6.0.min.js"></script> -->
 
   <style>
@@ -86,7 +86,7 @@
         });
         document.body.appendChild(textarea);
         const script = document.createElement('script');
-        script.src = 'strapdown.js';
+        script.src = 'https://jmcmenamy.github.io/strapdown/dist/strapdown.js';
         document.body.appendChild(script);
         script.onload = () => {
           document.body.style.display = 'block';
