@@ -6,6 +6,7 @@
 
 [![GoDoc](https://pkg.go.dev/badge/github.com/jmcmenamy/GoVector)](https://pkg.go.dev/github.com/jmcmenamy/GoVector) [![Go Report Card](https://goreportcard.com/badge/github.com/jmcmenamy/GoVector)](https://goreportcard.com/report/github.com/jmcmenamy/GoVector) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+----
 
 GoVector is a vector clock logging library written in Go, forked from and built off the original [GoVector](https://github.com/DistributedClocks/GoVector). The [vector clock algorithm](https://en.wikipedia.org/wiki/Vector_clock) is used to order events in distributed systems in the absence of a centralized clock. GoVector implements the vector clock algorithm and provides feature-rich logging using [Zap](https://pkg.go.dev/go.uber.org/zap#section-readme).
 
