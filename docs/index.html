@@ -90,8 +90,13 @@
         document.body.appendChild(script);
         script.onload = () => {
           document.body.style.display = 'block';
-          $('#content').addClass('markdown-body');
-          $('#headline').append('<a href="https://github.com/jmcmenamy/GoVector">Source Code</a>')
+          document.getElementById('content').classList.add('markdown-body');
+
+          const headline = document.getElementById('headline');
+          const link = document.createElement('a');
+          link.href = "https://github.com/jmcmenamy/GoVector";
+          link.textContent = "Source Code";
+          headline.appendChild(link);
         }
         document.body.appendChild(script);
       })
