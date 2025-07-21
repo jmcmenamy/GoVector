@@ -10,13 +10,9 @@
 
 GoVector is a vector clock logging library written in Go, forked from and built off the original [GoVector](https://github.com/DistributedClocks/GoVector). The [vector clock algorithm](https://en.wikipedia.org/wiki/Vector_clock) is used to order events in distributed systems in the absence of a centralized clock. GoVector implements the vector clock algorithm and provides feature-rich logging using [Zap](https://pkg.go.dev/go.uber.org/zap#section-readme).
 
-Sending vector clocks between nodes in a distributed system
-is done using 2 key functions, `PrepareSendZap` and `UnpackReceiveZap`. `PrepareSendZap` updates GoVector's local time, logs a sending event, and returns a byte array to send on the network. `UnpackReceiveZap` decodes messages from the network, merges GoVector's local
-clock with the received clock, and logs a receiving event.
+Sending vector clocks between nodes in a distributed system is done using 2 key functions, `PrepareSendZap` and `UnpackReceiveZap`. `PrepareSendZap` updates GoVector's local time, logs a sending event, and returns a byte array to send on the network. `UnpackReceiveZap` decodes messages from the network, merges GoVector's local clock with the received clock, and logs a receiving event.
 
-This library can be added to a Go project to generate a
-[DisViz](https://jmcmenamy.github.io/disviz/)-compatible vector-clock
-timestamped log of events in a distributed system.
+This library can be added to a Go project to generate a [DisViz](https://jmcmenamy.github.io/disviz/)-compatible vector-clock timestamped log of events in a distributed system.
 
 * `govec/`    	    : Contains the Library and all its dependencies
 * `govec/vclock`	: Pure vector clock library
@@ -25,12 +21,9 @@ timestamped log of events in a distributed system.
 
 ### Installation
 
-To install GoVector you must have a correctly configured go development
-environment. See [How to Write Go
-Code](https://go.dev/doc/code).
+To install GoVector you must have a correctly configured go development environment. See [How to Write Go Code](https://go.dev/doc/code).
 
-Once you set up your environment, GoVector can be installed with the go
-tool command:
+Once you set up your environment, GoVector can be installed with the go tool command:
 
 ```shell
 $ go install github.com/jmcmenamy/GoVector
