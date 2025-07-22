@@ -21,7 +21,7 @@ This library can be added to a Go project to generate a [DisViz](https://jmcmena
 
 ### Installation
 
-To install GoVector you must have a correctly configured go development environment. See [How to Write Go Code](https://go.dev/doc/code).
+To install GoVector you must have a correctly configured Go development environment. See [How to Write Go Code](https://go.dev/doc/code).
 
 Once you set up your environment, GoVector can be installed with the go tool command:
 
@@ -47,8 +47,8 @@ func main() {
 	Logger := govec.InitGoVector("MyProcess", "LogFile", govec.GetDefaultZapConfig())
 
 	// Prior to sending a message, call PrepareSendZapWrapPayload on the payload
-	messagepayload := []byte("samplepayload")
-	encodedVCpayload := Logger.PrepareSendZapWrapPayload("Sending Message", messagepayload, zapcore.InfoLevel, zap.Int("messageNum", 1))
+	messagePayload := []byte("samplepayload")
+	encodedVCpayload := Logger.PrepareSendZapWrapPayload("Sending Message", messagePayload, zapcore.InfoLevel, zap.Int("messageNum", 1))
 
 	// encodedVCpayload is ready to be written to the network
 	// Call UnpackReceiveZapWrapPayload on received messages to update local vector clock
