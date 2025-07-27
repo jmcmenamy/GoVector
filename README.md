@@ -87,7 +87,7 @@ Which produces these logs in `LogFile-zap-Log.txt`:
 
 `PrepareSendZap` returns a byte array that should be put in the user's payload that is sent across the network, extracted from the payload when a message is received, and passed to `UnpackReceiveZap`. It is also possible to wrap the user's payload inside the byte array returned from `PrepareSendZapWrapPayload`, so the returned byte array is sent across the network, and the user's payload is decoded using `UnpackReceiveZapWrapPayload`.
 
-For complete documentation with examples see GoVector's [documentation](https://pkg.go.dev/github.com/jmcmenamy/GoVector/govec).
+For complete documentation with examples see GoVector's [documentation](https://pkg.go.dev/github.com/jmcmenamy/GoVector).
 
 **Note for 6.5840 students**: For the vector clocks in the logs to be valid, it is important that only one process on the device thinks it is a particular raft node at a given time. For example, when I took the class, goroutines acting as a Raft node would learn they've been killed by periodically checking a flag in the struct:
 
